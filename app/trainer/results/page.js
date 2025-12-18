@@ -13,7 +13,7 @@ export default function TrainerResults() {
   const [filterDate, setFilterDate] = useState('')
 
   const departments = ['All', 'UOB', 'AYCAP', 'ttb', 'Krungsri', 'Bancassurance', 'Agent', 'Broker', 'DMTM']
-  const levels = ['All', 'The Rising Star', 'The Pro-Hunter', 'The Game Changer', 'The Legend']
+  const levels = ['Nursery', 'Rising Star', 'Legend']
 
   useEffect(() => {
     fetchResults()
