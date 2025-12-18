@@ -14,7 +14,7 @@ export default function JoinGame() {
     setLoading(true)
 
     try {
-      // 1. ตรวจสอบ PIN ว่ามีห้องเปิดอยู่จริงไหม
+      // 1. ตรวจสอบ PIN ในตาราง game_sessions
       const { data: session, error: sessionError } = await supabase
         .from('game_sessions')
         .select('id')
@@ -23,12 +23,15 @@ export default function JoinGame() {
         .single()
 
       if (sessionError || !session) {
-        alert('ไม่พบห้องนี้ หรือเกมเริ่มไปแล้วครับ')
+        alert('❌ ไม่พบห้องนี้ หรือเกมเริ่มไปแล้วครับ')
         setLoading(false)
         return
       }
 
-      // 2. เพิ่มชื่อผู้เล่นลงในฐานข้อมูล
+      // 2. บันทึกชื่อเล่นลงเครื่อง (localStorage) เพื่อใช้ในหน้าถัดไป
+      localStorage.setItem('nickname', nickname)
+
+      // 3. เพิ่มชื่อผู้เล่นลงในตาราง players
       const { data: player, error: playerError } = await supabase
         .from('players')
         .insert([
@@ -45,8 +48,7 @@ export default function JoinGame() {
         alert('เข้าห้องไม่ได้ ลองเปลี่ยนชื่อเล่นดูครับ')
         setLoading(false)
       } else {
-        // --- ส่วนที่แก้ไข: ให้เด้งไปหน้า Lobby ของคนเล่นทันที ---
-        setLoading(false)
+        // ✨ จุดสำคัญ: ต้องมั่นใจว่าคุณมีโฟลเดอร์ app/play/lobby/[id]/page.js อยู่จริง
         router.push(`/play/lobby/${session.id}`) 
       }
     } catch (err) {
@@ -57,58 +59,54 @@ export default function JoinGame() {
   }
 
   return (
-    <div style={{ 
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
-      height: '100vh', background: '#6f42c1', color: 'white', fontFamily: 'sans-serif' 
-    }}>
-      <h1 style={{ fontSize: '3rem', marginBottom: '30px' }}>🎮 Join Quiz</h1>
-      
-      <div style={{ background: 'white', padding: '30px', borderRadius: '15px', display: 'flex', flexDirection: 'column', gap: '15px', width: '320px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-        
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <label style={{ color: '#333', fontWeight: 'bold' }}>GAME PIN:</label>
+    <div style={s.container}>
+      <div style={s.card}>
+        <h1 style={s.title}>🎮 Join Quiz</h1>
+        <p style={s.subtitle}>ใส่ PIN เพื่อเริ่มการทดสอบ</p>
+
+        <div style={s.inputArea}>
+          <label style={s.label}>GAME PIN</label>
           <input 
             type="text" 
             placeholder="เช่น 123456" 
             value={pin}
             onChange={(e) => setPin(e.target.value)}
-            style={{ 
-              padding: '15px', fontSize: '20px', textAlign: 'center', 
-              borderRadius: '8px', border: '2px solid #ddd', 
-              color: 'black', backgroundColor: '#fff'
-            }}
+            style={s.input}
           />
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <label style={{ color: '#333', fontWeight: 'bold' }}>ชื่อเล่นของคุณ:</label>
+        <div style={s.inputArea}>
+          <label style={s.label}>ชื่อเล่นของคุณ</label>
           <input 
             type="text" 
-            placeholder="พิมพ์ชื่อที่นี่" 
+            placeholder="พิมพ์ชื่อเล่น..." 
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
-            style={{ 
-              padding: '15px', fontSize: '18px', textAlign: 'center', 
-              borderRadius: '8px', border: '2px solid #ddd', 
-              color: 'black', backgroundColor: '#fff'
-            }}
+            style={s.input}
           />
         </div>
 
         <button 
           onClick={handleJoin}
           disabled={loading}
-          style={{ 
-            padding: '15px', background: loading ? '#ccc' : '#28a745', 
-            color: 'white', fontSize: '20px', 
-            fontWeight: 'bold', border: 'none', borderRadius: '8px', 
-            cursor: loading ? 'default' : 'pointer', marginTop: '10px'
-          }}
+          style={s.btn(loading)}
         >
           {loading ? 'กำลังเข้าห้อง...' : 'เข้าร่วมเกม!'}
         </button>
       </div>
-      <p style={{ marginTop: '20px', opacity: 0.8 }}>กรอก PIN ให้ตรงกับที่โชว์บนหน้าจอ Host นะครับ</p>
+      <p style={s.footer}>ตรวจสอบ PIN จากหน้าจอ Host ของคุณ</p>
     </div>
   )
+}
+
+const s = {
+  container: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#8e44ad', fontFamily: "'Inter', sans-serif" },
+  card: { background: 'white', padding: '40px', borderRadius: '30px', width: '350px', boxShadow: '0 20px 50px rgba(0,0,0,0.2)', textAlign: 'center' },
+  title: { fontSize: '2.5rem', fontWeight: '900', color: '#8e44ad', margin: '0 0 10px 0' },
+  subtitle: { color: '#666', marginBottom: '30px' },
+  inputArea: { display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', textAlign: 'left' },
+  label: { fontSize: '0.8rem', fontWeight: 'bold', color: '#444', marginLeft: '5px' },
+  input: { padding: '15px', fontSize: '1.2rem', textAlign: 'center', borderRadius: '15px', border: '2px solid #eee', outline: 'none', transition: '0.3s' },
+  btn: (loading) => ({ padding: '18px', background: loading ? '#ccc' : '#2ecc71', color: 'white', fontSize: '1.2rem', fontWeight: 'bold', border: 'none', borderRadius: '15px', cursor: loading ? 'default' : 'pointer', marginTop: '10px', boxShadow: '0 5px 15px rgba(46, 204, 113, 0.3)' }),
+  footer: { marginTop: '30px', color: 'white', opacity: 0.8, fontSize: '0.9rem' }
 }

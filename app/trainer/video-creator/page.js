@@ -11,9 +11,17 @@ export default function VideoCreator() {
   const [recordedBlob, setRecordedBlob] = useState(null)
   const [fileSize, setFileSize] = useState(0)
   
+  // --- เพิ่ม State สำหรับจัดการรายการโจทย์ ---
+  const [questions, setQuestions] = useState([])
+  const [showQR, setShowQR] = useState(null)
+  
   const videoPreviewRef = useRef(null)
   const mediaRecorderRef = useRef(null)
-  const MAX_LIMIT = 10 * 1024 * 1024; // จำกัดที่ 10MB
+  const MAX_LIMIT = 10 * 1024 * 1024; // 10MB
+
+  useEffect(() => {
+    fetchQuestions(); // ดึงข้อมูลเมื่อเปิดหน้าเว็บ
+  }, []);
 
   useEffect(() => {
     if (stream && videoPreviewRef.current) {
@@ -22,7 +30,6 @@ export default function VideoCreator() {
     }
   }, [stream]);
 
-  // ระบบหยุดอัตโนมัติเมื่อครบ 10MB
   useEffect(() => {
     if (fileSize >= MAX_LIMIT && recording) {
       stopRecording();
@@ -30,10 +37,23 @@ export default function VideoCreator() {
     }
   }, [fileSize, recording]);
 
+  // ดึงข้อมูลโจทย์ทั้งหมดจากฐานข้อมูล
+  async function fetchQuestions() {
+    const { data } = await supabase.from('video_questions').select('*').order('created_at', { ascending: false });
+    if (data) setQuestions(data);
+  }
+
+  // ฟังก์ชันคัดลอกลิงก์ (ชี้ไปที่ /play/video)
+  const copyToClipboard = (id) => {
+    const shareUrl = `${window.location.origin}/play/video?id=${id}`;
+    navigator.clipboard.writeText(shareUrl);
+    alert('📋 คัดลอกลิงก์สำหรับพนักงานเรียบร้อยแล้ว!');
+  }
+
   const startCamera = async () => {
     try {
       const s = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 640, height: 480 }, // ลดความละเอียดเพื่อประหยัดพื้นที่
+        video: { width: 640, height: 480 },
         audio: true 
       });
       setStream(s);
@@ -43,7 +63,7 @@ export default function VideoCreator() {
   const startRecording = () => {
     setRecordedBlob(null);
     setFileSize(0);
-    const options = { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 1000000 }; // บีบอัด Bitrate
+    const options = { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 1000000 };
     const recorder = new MediaRecorder(stream, options);
     const chunks = [];
     recorder.ondataavailable = (e) => {
@@ -53,7 +73,7 @@ export default function VideoCreator() {
       }
     };
     recorder.onstop = () => setRecordedBlob(new Blob(chunks, { type: 'video/webm' }));
-    recorder.start(1000); // ตรวจสอบขนาดทุกวินาที
+    recorder.start(1000);
     mediaRecorderRef.current = recorder;
     setRecording(true);
   };
@@ -73,6 +93,7 @@ export default function VideoCreator() {
       await supabase.from('video_questions').insert([{ title, video_url: `questions/${fileName}`, target_segment: targetSegment }]);
       alert('✅ บันทึกโจทย์สำเร็จ!');
       setTitle(''); setRecordedBlob(null); setFileSize(0);
+      fetchQuestions(); // รีเฟรชรายการโจทย์ด้านล่างทันที
     } catch (err) { alert(err.message); } finally { setUploading(false); }
   };
 
@@ -80,10 +101,11 @@ export default function VideoCreator() {
     <div style={styles.pageBackground}>
       <div style={styles.container}>
         <h1 style={styles.headerTitle}>📽️ Trainer Studio</h1>
+        
+        {/* --- โซนสร้างโจทย์เดิมของคุณ --- */}
         <div style={styles.glassCard}>
           <input placeholder="ระบุหัวข้อโจทย์ฝึกฝน..." value={title} onChange={e=>setTitle(e.target.value)} style={styles.modernInput} />
           
-          {/* หลอดลิมิต 10MB */}
           {(recording || fileSize > 0) && (
             <div style={styles.limitContainer}>
               <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.7rem', marginBottom:'5px'}}>
@@ -98,7 +120,7 @@ export default function VideoCreator() {
 
           <div style={styles.videoFrame}>
             {!stream ? (
-              <div style={styles.placeholder}><button onClick={startCamera} style={styles.pulseBtn}>📸 เปิดกล้อง</button></div>
+              <div style={styles.placeholder}><button onClick={startCamera} style={styles.actionBtn}>📸 เปิดกล้อง</button></div>
             ) : (
               <div style={{position:'relative', height:'100%'}}>
                 <video ref={videoPreviewRef} autoPlay muted playsInline style={styles.videoElement} />
@@ -118,20 +140,47 @@ export default function VideoCreator() {
             )}
           </div>
         </div>
+
+        {/* --- ส่วนที่เพิ่มใหม่: รายการโจทย์และการแชร์ลิงก์ --- */}
+        <h2 style={{...styles.headerTitle, marginTop: '50px', fontSize: '1.5rem'}}>📋 รายการโจทย์ที่สร้างแล้ว</h2>
+        <div style={styles.listGrid}>
+          {questions.map((q) => {
+            const shareUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/play/video?id=${q.id}`
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(shareUrl)}`
+
+            return (
+              <div key={q.id} style={styles.itemCard}>
+                <h4 style={{margin: '0 0 10px 0'}}>{q.title}</h4>
+                <div style={{display: 'flex', gap: '10px'}}>
+                  <button onClick={() => copyToClipboard(q.id)} style={styles.smallBtn('#f5f3ff', '#8e44ad')}>🔗 ลิงก์</button>
+                  <button onClick={() => setShowQR(showQR === q.id ? null : q.id)} style={styles.smallBtn('#f1f3f5', '#444')}>📱 QR</button>
+                </div>
+                {showQR === q.id && (
+                  <div style={{marginTop: '15px', textAlign: 'center', background: '#fff', padding: '10px', borderRadius: '15px'}}>
+                    <img src={qrUrl} alt="QR Code" />
+                    <p style={{fontSize: '0.6rem', color: '#999'}}>แชร์ให้พนักงานสแกน</p>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
 }
+
+// --- รวม Styles ทั้งหมด ---
 const styles = {
   pageBackground: { background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', minHeight: '100vh', padding: '40px 20px' },
   container: { maxWidth: '800px', margin: '0 auto' },
   headerTitle: { fontSize: '2rem', fontWeight: '800', color: '#2d3436', textAlign: 'center', marginBottom: '30px' },
   glassCard: { background: 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(10px)', padding: '30px', borderRadius: '30px', boxShadow: '0 20px 50px rgba(0,0,0,0.1)' },
-  sectionCard: { background: '#fff', padding: '20px', borderRadius: '25px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', marginBottom: '25px' },
   videoFrame: { width: '100%', aspectRatio: '16/9', background: '#1e1e1e', borderRadius: '20px', overflow: 'hidden', position: 'relative', border: '5px solid #fff', boxShadow: '0 10px 20px rgba(0,0,0,0.2)' },
   videoElement: { width: '100%', height: '100%', objectFit: 'cover' },
-  modernInput: { width: '100%', padding: '15px', borderRadius: '15px', border: '2px solid #eee', marginBottom: '20px', fontSize: '1.1rem', outline: 'none' },
+  modernInput: { width: '100%', padding: '15px', borderRadius: '15px', border: '2px solid #eee', marginBottom: '20px', fontSize: '1.1rem', outline: 'none', boxSizing: 'border-box' },
   placeholder: { height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  controlArea: { marginTop: '20px', textAlign: 'center' },
   recordBtn: { padding: '12px 30px', background: '#ff4757', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold', cursor: 'pointer' },
   stopBtn: { padding: '12px 30px', background: '#2d3436', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold', cursor: 'pointer' },
   saveBtn: { padding: '12px 30px', background: '#2ed573', color: 'white', border: 'none', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer', marginLeft: '10px' },
@@ -142,5 +191,9 @@ const styles = {
   overlayStatus: { position: 'absolute', top: '15px', right: '15px' },
   recTag: { background: '#ff4757', color: 'white', padding: '5px 15px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold' },
   readyTag: { background: '#2ed573', color: 'white', padding: '5px 15px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold' },
-  labelHeader: { fontSize: '1rem', color: '#636e72', marginBottom: '15px', fontWeight: 'bold' }
+  
+  // Styles สำหรับรายการด้านล่าง
+  listGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' },
+  itemCard: { background: 'rgba(255,255,255,0.7)', padding: '20px', borderRadius: '20px', border: '1px solid #fff' },
+  smallBtn: (bg, color) => ({ flex: 1, padding: '10px', background: bg, color: color, border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' })
 }
