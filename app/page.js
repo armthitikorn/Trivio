@@ -10,7 +10,7 @@ export default function EnhancedDashboard() {
       {/* --- 👨‍💼 โซนสำหรับพนักงาน (พนักงานเห็นส่วนนี้) --- */}
       <h3 style={{ marginTop: '40px', color: '#8e44ad' }}>🚀 สำหรับพนักงาน (Employee Zone)</h3>
       <div style={ds.grid}>
-        <Link href="/play/video-test" style={ds.playCard}>
+        <Link href="/play/video" style={ds.playCard}>
           <div style={ds.iconCircle('#f5f3ff', '#8e44ad')}>🎬</div>
           <div>
             <h4 style={{ margin: 0 }}>เริ่มทำแบบทดสอบวิดีโอ</h4>
