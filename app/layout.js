@@ -3,7 +3,19 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-
+export const metadata = {
+  title: 'TRIVIO - Internal System',
+  description: 'Assessment system for employees',
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
+}
 export default function RootLayout({ children }) {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
