@@ -1,65 +1,57 @@
 'use client'
 import Link from 'next/link'
 
-export default function DashboardPage() {
+export default function EnhancedDashboard() {
   return (
     <div>
-      <header style={{ marginBottom: '40px' }}>
-        <h1 style={{ fontSize: '2rem', fontWeight: '800', color: '#1a1a1a' }}>ยินดีต้อนรับสู่ระบบเทรนนิ่ง</h1>
-        <p style={{ color: '#666', marginTop: '5px' }}>เลือกโหมดการใช้งานที่คุณต้องการจากเมนูด่วนด้านล่าง</p>
-      </header>
+      <h1 style={{ fontSize: '2.2rem', fontWeight: 800, color: '#1a1a1a' }}>ยินดีต้อนรับสู่ TRIVIO</h1>
+      <p style={{ color: '#666' }}>ระบบบริหารจัดการการเรียนรู้และประเมินผลอัจฉริยะ</p>
 
-      {/* การ์ดสรุปสถานะ (ตัวอย่าง) */}
-      <div style={dashStyles.statsRow}>
-        <div style={dashStyles.statCard}>
-          <p style={{ color: '#888', fontSize: '0.85rem', margin: 0 }}>วิดีโอรอตรวจ</p>
-          <h2 style={{ margin: '10px 0', fontSize: '1.8rem', color: '#8e44ad' }}>12 รายการ</h2>
-        </div>
-        <div style={dashStyles.statCard}>
-          <p style={{ color: '#888', fontSize: '0.85rem', margin: 0 }}>พนักงานที่เรียนจบแล้ว</p>
-          <h2 style={{ margin: '10px 0', fontSize: '1.8rem' }}>1,254 คน</h2>
-        </div>
+      {/* --- 👨‍💼 โซนสำหรับพนักงาน (พนักงานเห็นส่วนนี้) --- */}
+      <h3 style={{ marginTop: '40px', color: '#8e44ad' }}>🚀 สำหรับพนักงาน (Employee Zone)</h3>
+      <div style={ds.grid}>
+        <Link href="/play/video-test" style={ds.playCard}>
+          <div style={ds.iconCircle('#f5f3ff', '#8e44ad')}>🎬</div>
+          <div>
+            <h4 style={{ margin: 0 }}>เริ่มทำแบบทดสอบวิดีโอ</h4>
+            <p style={{ margin: '5px 0 0', fontSize: '0.85rem', color: '#777' }}>กดเพื่อเริ่มดูโจทย์และอัดวิดีโอส่งงาน</p>
+          </div>
+        </Link>
+        <Link href="/play/my-results" style={ds.playCard}>
+          <div style={ds.iconCircle('#fff7ed', '#f97316')}>🎖️</div>
+          <div>
+            <h4 style={{ margin: 0 }}>เช็คคะแนนของฉัน</h4>
+            <p style={{ margin: '5px 0 0', fontSize: '0.85rem', color: '#777' }}>ดูผลการประเมินจากหัวหน้างาน</p>
+          </div>
+        </Link>
       </div>
 
-      <h3 style={{ marginTop: '40px', marginBottom: '20px' }}>🚀 เมนูด่วน (Quick Access)</h3>
-      <div style={dashStyles.grid}>
-        
-        {/* ลิงก์ไปหน้าอัดวิดีโอ (ที่เราเพิ่งทำเสร็จ) */}
-        <Link href="/trainer/video-creator" style={dashStyles.actionCard}>
-          <div style={dashStyles.iconBox('#f5f3ff', '#8e44ad')}>📹</div>
-          <div>
-            <h4 style={{ margin: 0, fontSize: '1.1rem' }}>Video Trainer</h4>
-            <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '5px' }}>สร้างและบันทึกโจทย์วิดีโอ (จำกัด 10MB)</p>
-          </div>
-        </Link>
-
-        {/* ลิงก์ไปหน้าเสียง */}
-        <Link href="/admin/create-audio" style={dashStyles.actionCard}>
-          <div style={dashStyles.iconBox('#fff7ed', '#f97316')}>🎙️</div>
-          <div>
-            <h4 style={{ margin: 0, fontSize: '1.1rem' }}>Audio Creator</h4>
-            <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '5px' }}>สร้างบทฝึกฝนด้วยเสียงแบบบทบาทสมมติ</p>
-          </div>
-        </Link>
-
-        {/* ลิงก์ไปหน้าปรนัยเดิม */}
-        <Link href="/host" style={dashStyles.actionCard}>
-          <div style={dashStyles.iconBox('#ecfdf5', '#10b981')}>📝</div>
-          <div>
-            <h4 style={{ margin: 0, fontSize: '1.1rem' }}>Quiz Management</h4>
-            <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '5px' }}>จัดการระบบควิซปรนัย SupaQuiz เดิม</p>
-          </div>
-        </Link>
-
+      {/* --- 🛠️ โซนสำหรับหัวหน้า (Management Zone) --- */}
+      <h3 style={{ marginTop: '50px', color: '#444' }}>⚙️ การจัดการ (Supervisor Zone)</h3>
+      <div style={ds.grid}>
+        <QuickCard href="/trainer/video-creator" icon="📹" title="จัดการโจทย์วิดีโอ" desc="สร้างโจทย์และแชร์ลิงก์ให้ทีม" color="#f1f3f5" />
+        <QuickCard href="/admin/review-answers" icon="📊" title="ศูนย์ตรวจประเมิน" desc="ตรวจงานวิดีโอและให้คะแนน" color="#f1f3f5" />
+        <QuickCard href="/play/leaderboard" icon="👑" title="ทำเนียบคนเก่ง" desc="ดูอันดับคะแนนยอดเยี่ยม" color="#f1f3f5" />
       </div>
     </div>
   );
 }
 
-const dashStyles = {
-  statsRow: { display: 'flex', gap: '20px', marginBottom: '30px' },
-  statCard: { background: 'white', padding: '25px', borderRadius: '24px', flex: 1, border: '1px solid #f0f0f0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' },
-  actionCard: { display: 'flex', alignItems: 'center', gap: '20px', padding: '25px', background: 'white', borderRadius: '24px', textDecoration: 'none', color: 'inherit', border: '1px solid #f0f0f0', transition: '0.3s' },
-  iconBox: (bg, color) => ({ width: '60px', height: '60px', borderRadius: '18px', background: bg, color: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.6rem' })
+function QuickCard({ href, icon, title, desc, color }) {
+  return (
+    <Link href={href} style={{ ...ds.card, background: color }}>
+      <span style={{ fontSize: '1.5rem' }}>{icon}</span>
+      <div>
+        <h4 style={{ margin: 0 }}>{title}</h4>
+        <p style={{ margin: '5px 0 0', fontSize: '0.8rem', color: '#777' }}>{desc}</p>
+      </div>
+    </Link>
+  );
+}
+
+const ds = {
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginTop: '15px' },
+  playCard: { display: 'flex', alignItems: 'center', gap: '20px', padding: '25px', background: 'white', borderRadius: '25px', textDecoration: 'none', color: 'inherit', border: '1px solid #e0e0e0', boxShadow: '0 10px 20px rgba(0,0,0,0.03)', transition: '0.3s' },
+  card: { display: 'flex', alignItems: 'center', gap: '20px', padding: '20px', borderRadius: '20px', textDecoration: 'none', color: 'inherit', border: '1px solid #eee' },
+  iconCircle: (bg, color) => ({ width: '60px', height: '60px', borderRadius: '50%', background: bg, color: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.8rem' })
 };
