@@ -25,7 +25,6 @@ export default function AudioGameArena() {
   async function fetchSessionAndQuestions() {
     try {
       console.log("เริ่มดึงข้อมูล Session ID:", id)
-      // 1. ดึง Session
       const { data: session, error: sError } = await supabase
         .from('game_sessions')
         .select('*')
@@ -38,22 +37,24 @@ export default function AudioGameArena() {
       }
 
       setSessionInfo(session)
-      console.log("Session Info:", session)
 
-      // 2. ดึงโจทย์ (จากตาราง questions)
       const { data: qs, error: qError } = await supabase
         .from('questions')
         .select('*')
         .eq('target_department', session.target_department)
         .order('created_at', { ascending: true })
 
-      if (qError) {
-        console.error("Error ดึงโจทย์:", qError)
-      }
-
       if (qs) {
-        // กรองเฉพาะข้อที่มี Path ไฟล์เสียงในช่อง text
-        const validQs = qs.filter(q => q.text && q.text.trim() !== "")
+        console.log("Raw Questions:", qs) // ดูข้อมูลดิบว่าไฟล์เสียงอยู่ช่องไหน
+
+        // ✨ แก้ไขจุดนี้: เช็คทุกคอลัมน์ที่เป็นไปได้ (text, media_url, audio_question_url)
+        const validQs = qs.filter(q => {
+            const hasText = q.text && q.text.trim() !== ""
+            const hasMedia = q.media_url && q.media_url.trim() !== ""
+            const hasAudioQ = q.audio_question_url && q.audio_question_url.trim() !== ""
+            return hasText || hasMedia || hasAudioQ
+        })
+
         console.log("โจทย์ที่ดึงได้ทั้งหมด:", qs.length)
         console.log("โจทย์ที่มีไฟล์เสียงพร้อมใช้:", validQs.length)
         setQuestions(validQs)
@@ -63,7 +64,6 @@ export default function AudioGameArena() {
     }
   }
 
-  // --- ระบบอัดเสียง ---
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -89,7 +89,6 @@ export default function AudioGameArena() {
     }
   }
 
-  // --- ส่งคำตอบ ---
   async function submitAnswer() {
     if (!audioUrl) return
     setUploading(true)
@@ -108,8 +107,6 @@ export default function AudioGameArena() {
             audio_answer_url: fileName
         }])
 
-        // alert("บันทึกสำเร็จ!") 
-        
         if (currentIndex < questions.length - 1) {
             setCurrentIndex(currentIndex + 1)
             setAudioUrl(null)
@@ -125,39 +122,31 @@ export default function AudioGameArena() {
     }
   }
 
-  // ✨ แก้ไขจุดที่ทำให้หน้าขาว (เพิ่ม background สีเข้ม)
   if (questions.length === 0) {
     return (
       <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column',
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh', 
-        background: '#282c34', // ต้องมีสีพื้นหลัง ไม่งั้นตัวหนังสือขาวจะมองไม่เห็น
-        color: 'white',
-        fontFamily: 'sans-serif'
+        display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', 
+        height: '100vh', background: '#282c34', color: 'white', fontFamily: 'sans-serif'
       }}>
         <h2>⏳ กำลังโหลดสนามฝึก...</h2>
-        <p style={{opacity: 0.7, marginTop: '10px'}}>
-           (แผนก: {sessionInfo?.target_department || 'กำลังค้นหา...'})
-        </p>
+        <p style={{opacity: 0.7, marginTop: '10px'}}>(แผนก: {sessionInfo?.target_department || '...'})</p>
         <p style={{fontSize: '0.8rem', color: '#aaa', marginTop: '20px'}}>
-           *หากค้างหน้านี้นาน แสดงว่ายังไม่มีโจทย์ที่มีไฟล์เสียงในแผนกนี้
+            โจทย์ทั้งหมด: 14 ข้อ | พร้อมใช้งาน: 0 ข้อ <br/>
+            (ตรวจสอบคอลัมน์ text, media_url, audio_question_url ใน DB)
         </p>
-        <button onClick={() => router.back()} style={{marginTop:'30px', padding:'10px 20px', cursor:'pointer', borderRadius:'5px'}}>
-          กลับไปหน้าหลัก
-        </button>
+        <button onClick={() => router.back()} style={{marginTop:'30px', padding:'10px 20px', cursor:'pointer', borderRadius:'5px'}}>กลับ</button>
       </div>
     )
   }
 
   const currentQ = questions[currentIndex]
 
-  // Logic จัดการ Path
-  const dbPath = currentQ?.text || "" 
-  let cleanPath = dbPath.startsWith('/') ? dbPath.substring(1) : dbPath
-  if (!cleanPath.startsWith('questions/')) {
+  // ✨ Logic การเลือก Path ที่ฉลาดขึ้น (หาตัวที่มีค่าก่อน)
+  const rawPath = currentQ?.text || currentQ?.media_url || currentQ?.audio_question_url || ""
+  
+  let cleanPath = rawPath.startsWith('/') ? rawPath.substring(1) : rawPath
+  // ถ้า Path สั้นเกินไป หรือไม่มี questions/ นำหน้า ให้เติมเข้าไป
+  if (cleanPath && !cleanPath.startsWith('questions/')) {
       cleanPath = `questions/${cleanPath}`
   }
   
@@ -173,8 +162,7 @@ export default function AudioGameArena() {
         <div style={{ background: '#f0f2f5', padding: '20px', borderRadius: '15px', margin: '20px 0' }}>
           <p>🎧 คลิกฟังเสียงลูกค้า (โจทย์):</p>
           <audio key={questionAudioUrl} src={questionAudioUrl} controls style={{ width: '100%' }} />
-          {/* Debug path เล็กๆ เผื่อเสียงไม่ดัง */}
-          <p style={{fontSize:'0.6rem', color:'#ccc', marginTop:'5px'}}>{cleanPath}</p>
+          <p style={{fontSize:'0.6rem', color:'#ccc', marginTop:'5px', overflowWrap: 'anywhere'}}>File: {cleanPath}</p>
         </div>
 
         <hr style={{ opacity: 0.2 }} />
