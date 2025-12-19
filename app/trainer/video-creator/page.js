@@ -38,10 +38,21 @@ export default function VideoCreator() {
   }, [fileSize, recording]);
 
   // ดึงข้อมูลโจทย์ทั้งหมดจากฐานข้อมูล
-  async function fetchQuestions() {
-    const { data } = await supabase.from('video_questions').select('*').order('created_at', { ascending: false });
-    if (data) setQuestions(data);
-  }
+async function fetchQuestions() {
+  // 1. ดึงข้อมูล User ที่กำลังใช้งานอยู่
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) return; // ถ้าไม่ได้ Login ให้หยุดทำงาน
+
+  // 2. ดึงโจทย์เฉพาะที่เป็นของ User คนนี้เท่านั้น
+  const { data, error } = await supabase
+    .from('video_questions')
+    .select('*')
+    .eq('user_id', user.id) // ✨ นี่คือตัวกรอง "เจ้าของ"
+    .order('created_at', { ascending: false });
+
+  if (data) setQuestions(data);
+}
 
   // ฟังก์ชันคัดลอกลิงก์ (ชี้ไปที่ /play/video)
   const copyToClipboard = (id) => {
@@ -83,19 +94,44 @@ export default function VideoCreator() {
     setRecording(false);
   };
 
-  const handleSave = async () => {
-    if (!title || !recordedBlob) return alert('กรุณาระบุชื่อโจทย์');
-    setUploading(true);
+const handleSave = async () => {
+  if (!title || !recordedBlob) return alert('กรุณาระบุชื่อโจทย์');
+  setUploading(true);
+
+  try {
+    // 1. ดึงข้อมูล User ผู้สร้าง
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("ไม่พบข้อมูลผู้ใช้งาน กรุณา Login ใหม่");
+
     const fileName = `q_${Date.now()}.webm`;
-    try {
-      const { error: upError } = await supabase.storage.from('video_training').upload(`questions/${fileName}`, recordedBlob);
-      if (upError) throw upError;
-      await supabase.from('video_questions').insert([{ title, video_url: `questions/${fileName}`, target_segment: targetSegment }]);
-      alert('✅ บันทึกโจทย์สำเร็จ!');
-      setTitle(''); setRecordedBlob(null); setFileSize(0);
-      fetchQuestions(); // รีเฟรชรายการโจทย์ด้านล่างทันที
-    } catch (err) { alert(err.message); } finally { setUploading(false); }
-  };
+    
+    // 2. อัปโหลดไฟล์วิดีโอ (เหมือนเดิม)
+    const { error: upError } = await supabase.storage
+      .from('video_training')
+      .upload(`questions/${fileName}`, recordedBlob);
+    if (upError) throw upError;
+
+    // 3. บันทึกลงตาราง พร้อมระบุ user_id
+    const { error: insError } = await supabase
+      .from('video_questions')
+      .insert([{ 
+        title, 
+        video_url: `questions/${fileName}`, 
+        target_segment: targetSegment,
+        user_id: user.id // ✨ ระบุว่าโจทย์นี้เป็นของใคร
+      }]);
+
+    if (insError) throw insError;
+
+    alert('✅ บันทึกโจทย์ส่วนตัวของคุณสำเร็จ!');
+    setTitle(''); setRecordedBlob(null); setFileSize(0);
+    fetchQuestions(); // รีเฟรชรายการ
+  } catch (err) { 
+    alert(err.message); 
+  } finally { 
+    setUploading(false); 
+  }
+};
 
   return (
     <div style={styles.pageBackground}>
