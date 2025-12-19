@@ -21,6 +21,7 @@ export default function SoloQuizGame() {
   }, [id])
 
   async function fetchQuestions() {
+    // 1. ดึง quiz_id จาก session
     const { data: session } = await supabase
       .from('game_sessions')
       .select('quiz_id')
@@ -28,6 +29,7 @@ export default function SoloQuizGame() {
       .single()
 
     if (session) {
+      // 2. ดึงคำถามที่เทรนเนอร์สร้างไว้ (ดึงมาทั้ง Object รวมถึงฟิลด์ options ที่เป็น JSON)
       const { data: qs } = await supabase
         .from('questions')
         .select('*')
@@ -46,12 +48,13 @@ export default function SoloQuizGame() {
     setLoading(false)
   }
 
-  async function handleAnswer(selectedChoice) {
+  async function handleAnswer(selectedChoiceLabel) {
     if (answered) return
     setAnswered(true)
 
     const currentQ = questions[currentIndex]
-    const isCorrect = selectedChoice === currentQ.correct_option
+    // เช็คกับ correct_option (เช่น 'A', 'B', 'C', 'D')
+    const isCorrect = selectedChoiceLabel === currentQ.correct_option
     
     let newScore = score
     if (isCorrect) {
@@ -103,23 +106,35 @@ export default function SoloQuizGame() {
   }
 
   if (questions.length === 0) return <div style={s.container}>กำลังโหลดข้อสอบ...</div>
+  
   const currentQ = questions[currentIndex]
-  const choices = [
-      { key: 'A', text: currentQ.option_a, color: '#ff7675' },
-      { key: 'B', text: currentQ.option_b, color: '#74b9ff' },
-      { key: 'C', text: currentQ.option_c, color: '#ffeaa7' },
-      { key: 'D', text: currentQ.option_d, color: '#55efc4' }
-  ]
+  
+  // ✨ จุดที่ปรับปรุง: ดึงตัวเลือกจาก JSON Array (options) ที่เทรนเนอร์สร้างไว้
+  const choices = currentQ.options || [] 
+  
+  // ฟังก์ชันช่วยกำหนดสีปุ่มตาม Label
+  const getBtnColor = (label) => {
+    const colors = { A: '#ff7675', B: '#74b9ff', C: '#ffeaa7', D: '#55efc4' }
+    return colors[label] || '#eee'
+  }
 
   return (
     <div style={s.container}>
       <div style={s.questionCard}>
-        <div style={s.progressBarBg}><div style={{ ...s.progressBarFill, width: `${((currentIndex + 1) / questions.length) * 100}%` }}></div></div>
-        <h2 style={{ color: '#333' }}>{currentQ.question_text}</h2>
+        <div style={s.progressBarBg}>
+          <div style={{ ...s.progressBarFill, width: `${((currentIndex + 1) / questions.length) * 100}%` }}></div>
+        </div>
+        <h2 style={{ color: '#333', marginBottom: '30px' }}>{currentQ.question_text}</h2>
+        
         <div style={s.gridChoices}>
           {choices.map((c) => (
-            <button key={c.key} disabled={answered} onClick={() => handleAnswer(c.key)} style={{...s.choiceBtn(c.color), opacity: answered ? 0.5 : 1}}>
-              {c.key}. {c.text}
+            <button 
+              key={c.label} 
+              disabled={answered} 
+              onClick={() => handleAnswer(c.label)} 
+              style={{...s.choiceBtn(getBtnColor(c.label)), opacity: answered ? 0.5 : 1}}
+            >
+              <b style={{marginRight: '8px'}}>{c.label}.</b> {c.text}
             </button>
           ))}
         </div>
@@ -132,12 +147,24 @@ const s = {
   container: { minHeight: '100vh', background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', fontFamily: 'sans-serif' },
   card: { background: 'white', padding: '40px', borderRadius: '25px', textAlign: 'center', width: '100%', maxWidth: '400px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' },
   questionCard: { background: 'white', padding: '30px', borderRadius: '25px', width: '100%', maxWidth: '600px', textAlign: 'center', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' },
-  input: { width: '100%', padding: '15px', borderRadius: '10px', border: '1px solid #ddd', marginBottom: '20px' },
+  input: { width: '100%', padding: '15px', borderRadius: '10px', border: '1px solid #ddd', marginBottom: '20px', boxSizing: 'border-box' },
   btnPrimary: { width: '100%', padding: '15px', background: '#2d3436', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' },
   btnBack: { width: '100%', padding: '15px', background: '#f1f2f6', border: 'none', borderRadius: '10px', cursor: 'pointer' },
   scoreBox: { background: '#f8f9fa', padding: '20px', borderRadius: '15px', margin: '20px 0' },
   progressBarBg: { width: '100%', height: '10px', background: '#eee', borderRadius: '5px', marginBottom: '20px', overflow: 'hidden' },
   progressBarFill: { height: '100%', background: '#6f42c1', transition: 'width 0.3s ease' },
   gridChoices: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '20px' },
-  choiceBtn: (color) => ({ padding: '20px', border: 'none', borderRadius: '15px', background: color, color: '#333', fontWeight: 'bold', cursor: 'pointer' })
+  choiceBtn: (color) => ({ 
+    padding: '20px', 
+    border: 'none', 
+    borderRadius: '15px', 
+    background: color, 
+    color: '#333', 
+    fontWeight: 'bold', 
+    cursor: 'pointer',
+    fontSize: '1rem',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  })
 }
