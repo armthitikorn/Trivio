@@ -40,7 +40,11 @@ export default function SmartAudioArena() {
           .eq('target_department', session.target_department) 
           .order('created_at', { ascending: true })
         
-        if (qs && qs.length > 0) setQuestions(qs)
+        if (qs) {
+          // ✨ แก้ให้ขาด: กรองเฉพาะข้อที่มี Path เสียง (text) เท่านั้น ข้อว่างๆ จะไม่ถูกนำมาแสดง
+          const validQs = qs.filter(q => q.text && q.text.trim() !== "")
+          setQuestions(validQs)
+        }
       }
     } catch (err) {
       console.error("Fetch Error:", err)
@@ -49,9 +53,12 @@ export default function SmartAudioArena() {
     }
   }
 
-  // --- ระบบบันทึกเสียง ---
   async function startRecording() {
     try {
+      // เคลียร์เสียงเก่าก่อนอัดใหม่
+      if (audioUrl?.preview) URL.revokeObjectURL(audioUrl.preview)
+      setAudioUrl(null)
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       mediaRecorder.current = new MediaRecorder(stream)
       audioChunks.current = []
@@ -68,7 +75,7 @@ export default function SmartAudioArena() {
   }
 
   function stopRecording() {
-    if (mediaRecorder.current) {
+    if (mediaRecorder.current && isRecording) {
       mediaRecorder.current.stop()
       setIsRecording(false)
     }
@@ -77,11 +84,17 @@ export default function SmartAudioArena() {
   async function submitAnswer() {
     if (!audioUrl || uploading) return
     setUploading(true)
+    
     const nickname = localStorage.getItem('player_name') || 'Warrior'
+    // ตั้งชื่อไฟล์คำตอบของพนักงาน (เก็บไว้ในโฟลเดอร์ answers)
     const fileName = `answers/${sessionInfo?.target_department}/${id}/${Date.now()}.wav`
 
     try {
-      await supabase.storage.from('recordings').upload(fileName, audioUrl.blob)
+      // 1. อัปโหลดเสียงพนักงาน
+      const { error: upError } = await supabase.storage.from('recordings').upload(fileName, audioUrl.blob)
+      if (upError) throw upError
+
+      // 2. บันทึกคำตอบลง DB
       await supabase.from('answers').insert([{
         session_id: id,
         question_id: questions[currentIndex]?.id,
@@ -89,12 +102,13 @@ export default function SmartAudioArena() {
         audio_answer_url: fileName
       }])
 
+      // 3. ไปข้อถัดไป
       if (currentIndex < questions.length - 1) {
-        setCurrentIndex(currentIndex + 1)
+        setCurrentIndex(prev => prev + 1)
         setAudioUrl(null)
       } else {
-        alert('🎉 ภารกิจสำเร็จ!')
-        router.push('/play/audio')
+        alert('🎉 ภารกิจสำเร็จ! ส่งคำตอบครบทุกข้อแล้วครับ')
+        router.push('/play/audio') // หรือไปหน้าสรุปผล
       }
     } catch (err) {
       alert("เกิดข้อผิดพลาด: " + err.message)
@@ -111,20 +125,23 @@ export default function SmartAudioArena() {
 
   if (questions.length === 0) return (
     <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100vh', background:'#282c34', color:'white', textAlign:'center', padding:'20px' }}>
-      <h2>❌ ไม่พบโจทย์แผนก {sessionInfo?.target_department}</h2>
-      <button onClick={() => router.back()} style={{ marginTop:'20px', padding:'10px 20px', borderRadius:'10px' }}>กลับไปเช็ค PIN</button>
+      <h2>❌ ไม่พบโจทย์ในแผนก {sessionInfo?.target_department}</h2>
+      <p>เทรนเนอร์อาจยังไม่ได้อัปโหลดไฟล์เสียงในแผนกนี้</p>
+      <button onClick={() => router.back()} style={{ marginTop:'20px', padding:'10px 20px', borderRadius:'10px', cursor:'pointer' }}>กลับไปเช็ค PIN</button>
     </div>
   )
 
   const currentQ = questions[currentIndex]
   
-  // ✨ ดึง Path จากคอลัมน์ 'text' และลบเครื่องหมาย / ตัวแรกออก (ถ้ามี)
-  const rawPath = currentQ?.text || ""
-  const cleanPath = rawPath.startsWith('/') ? rawPath.substring(1) : rawPath
+  // ✨ แก้ให้ขาด: ตรวจสอบและจัดการ Path ให้เป๊ะ 
+  // ถ้าใน DB ไม่มีคำว่า questions/ นำหน้า เราจะเติมให้เพื่อให้ Storage หาเจอ
+  const dbPath = currentQ?.text || ""
+  let cleanPath = dbPath.startsWith('/') ? dbPath.substring(1) : dbPath
+  if (!cleanPath.startsWith('questions/')) {
+      cleanPath = `questions/${cleanPath}`
+  }
   
-  const qAudioUrl = cleanPath 
-    ? supabase.storage.from('recordings').getPublicUrl(cleanPath).data.publicUrl 
-    : null
+  const qAudioUrl = supabase.storage.from('recordings').getPublicUrl(cleanPath).data.publicUrl
 
   return (
     <div style={{ padding: '20px', minHeight: '100vh', background: '#282c34', color: 'white', fontFamily: 'sans-serif' }}>
@@ -139,13 +156,10 @@ export default function SmartAudioArena() {
 
         <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '15px', border: '1px solid #eee', margin: '20px 0' }}>
           <p style={{ fontWeight: 'bold', marginBottom: '10px' }}>👂 ฟังเสียงลูกค้า:</p>
-          {qAudioUrl ? (
-            <audio key={qAudioUrl} src={qAudioUrl} controls style={{ width: '100%' }} />
-          ) : (
-            <p style={{color:'red'}}>* ไม่พบไฟล์เสียง (Path: {rawPath})</p>
-          )}
+          {/* ใช้ key={qAudioUrl} เพื่อให้ audio player รีเฟรชใหม่ทุกครั้งที่เปลี่ยนข้อ */}
+          <audio key={qAudioUrl} src={qAudioUrl} controls style={{ width: '100%' }} />
           <p style={{ marginTop: '15px', fontSize: '1.2rem', fontWeight: 'bold', color: '#333' }}>
-             เป้าหมาย: โต้ตอบในหมวด {currentQ?.category}
+              เป้าหมาย: โต้ตอบในหมวด {currentQ?.category}
           </p>
         </div>
 
@@ -161,7 +175,7 @@ export default function SmartAudioArena() {
             <div style={{ marginTop: '30px', borderTop:'1px solid #eee', paddingTop:'20px' }}>
               <p style={{fontSize:'0.9rem', marginBottom:'10px'}}>เช็คเสียงของคุณก่อนส่ง:</p>
               <audio src={audioUrl.preview} controls style={{ width: '100%' }} />
-              <button onClick={submitAnswer} disabled={uploading} style={{ width: '100%', marginTop: '20px', padding: '18px', background: uploading ? '#ccc' : '#28a745', color: 'white', border: 'none', borderRadius: '15px', fontSize: '1.2rem', fontWeight: 'bold' }}>
+              <button onClick={submitAnswer} disabled={uploading} style={{ width: '100%', marginTop: '20px', padding: '18px', background: uploading ? '#ccc' : '#28a745', color: 'white', border: 'none', borderRadius: '15px', fontSize: '1.2rem', fontWeight: 'bold', cursor: uploading ? 'default' : 'pointer' }}>
                 {uploading ? 'กำลังส่งคำตอบ...' : 'ส่งคำตอบแล้วไปต่อ ✅'}
               </button>
             </div>

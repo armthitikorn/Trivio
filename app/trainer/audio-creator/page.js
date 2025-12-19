@@ -94,6 +94,7 @@ export default function PerfectTrainerAudioCreator() {
     if (upErr) return alert(upErr.message)
 
     await supabase.from('questions').insert([{
+      text: fileName,
       question_text: questionTitle,
       category: category,
       target_department: targetDept,
