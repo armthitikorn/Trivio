@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react' // ✨ เพิ่ม useEffect ตรงนี้
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -14,15 +14,6 @@ export default function PlayerJoinPortal() {
   const [level, setLevel] = useState('')
   
   const [loading, setLoading] = useState(false)
-
-  // ✨ ฟังก์ชันพิเศษ: ถ้าสแกน QR Code มา มันจะเอา PIN มาใส่ในช่องให้เองอัตโนมัติ
-  useEffect(() => {
-    const queryParams = new URLSearchParams(window.location.search);
-    const pinFromUrl = queryParams.get('pin');
-    if (pinFromUrl) {
-      setPin(pinFromUrl);
-    }
-  }, []);
 
   async function handleJoin() {
     // 1. ตรวจสอบข้อมูลให้ครบ
@@ -52,6 +43,7 @@ export default function PlayerJoinPortal() {
       }
 
       // 3. ✨ บันทึกข้อมูลพนักงานลง Temporary Storage (localStorage)
+      // เพื่อให้หน้า Quiz ดึงไปใช้บันทึกลงตาราง players ตอนทำเสร็จ
       const playerData = {
         employeeId,
         nickname,
