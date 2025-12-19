@@ -40,42 +40,46 @@ export default function SoloQuizGame() {
     }
   }
 
-  async function startGame() {
-    if (!nickname) return alert("กรุณาใส่ชื่อก่อนเริ่ม")
-    setLoading(true)
-    await supabase.from('players').insert([{ session_id: id, nickname: nickname, score: 0 }])
+// แก้ไขฟังก์ชันเริ่มเกม
+async function startGame() {
+  setLoading(true)
+  
+  // ดึงข้อมูลที่พนักงานกรอกไว้จากหน้า Login
+  const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
+  
+  // บันทึกข้อมูลเริ่มต้นลงตาราง players
+  const { error } = await supabase.from('players').insert([{ 
+    session_id: id, 
+    nickname: savedInfo.nickname || 'Unknown', 
+    employee_id: savedInfo.employeeId,
+    department: savedInfo.department,
+    level: savedInfo.level,
+    score: 0 
+  }])
+  
+  if (error) {
+    console.error("Error saving player:", error)
+    alert("เกิดข้อผิดพลาดในการลงทะเบียน")
+  } else {
+    setNickname(savedInfo.nickname)
     setGameStarted(true)
-    setLoading(false)
   }
+  setLoading(false)
+}
 
-  async function handleAnswer(selectedChoiceLabel) {
-    if (answered) return
-    setAnswered(true)
+// แก้ไขฟังก์ชันบันทึกคะแนนตอนจบเกม
+async function saveFinalScore(finalScore) {
+  const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
+  
+  await supabase
+    .from('players')
+    .update({ score: finalScore })
+    .eq('session_id', id)
+    .eq('nickname', savedInfo.nickname)
+    .eq('employee_id', savedInfo.employeeId) // ระบุให้ชัดป้องกันชื่อซ้ำ
 
-    const currentQ = questions[currentIndex]
-    // เช็คกับ correct_option (เช่น 'A', 'B', 'C', 'D')
-    const isCorrect = selectedChoiceLabel === currentQ.correct_option
-    
-    let newScore = score
-    if (isCorrect) {
-      newScore = score + 1
-      setScore(newScore)
-    }
-
-    setTimeout(() => {
-      if (currentIndex < questions.length - 1) {
-        setCurrentIndex(prev => prev + 1)
-        setAnswered(false)
-      } else {
-        saveFinalScore(newScore)
-      }
-    }, 1000)
-  }
-
-  async function saveFinalScore(finalScore) {
-    await supabase.from('players').update({ score: finalScore }).eq('session_id', id).eq('nickname', nickname)
-    setIsFinished(true)
-  }
+  setIsFinished(true)
+}
 
   if (!gameStarted) {
     return (
