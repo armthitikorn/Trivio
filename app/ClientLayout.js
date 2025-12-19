@@ -21,16 +21,25 @@ export default function ClientLayout({ children }) {
             <span style={s.icon}>🏠</span> หน้าแรก
           </Link>
           
-<p style={s.menuLabel}>CREATOR STUDIO</p>
+            <p style={s.menuLabel}>CREATOR STUDIO</p>
           <Link href="/trainer/video-creator" style={s.link(isActive("/trainer/video-creator"))}>
             <span style={s.icon}>🎬</span> โจทย์วิดีโอ
           </Link>
-          <Link href="/play/audio" style={s.link(isActive("/play/audio"))}>
-            <span style={s.icon}>🎙️</span> โจทย์เสียง
-          </Link>
+          
+          {/* 2. ปุ่มไปหน้าจัดการควิซ PIN */}
           <Link href="/host" style={s.link(isActive("/host"))}>
             <span style={s.icon}>🎮</span> ควิซ PIN
           </Link>
+
+          {/* 3. เพิ่มปุ่มใหม่: ไปหน้าสร้างโจทย์เสียง (ฝั่งเทรนเนอร์) */}
+          <Link href="/trainer/audio-creator" style={s.link(isActive("/trainer/audio-creator"))}>
+            <span style={s.icon}>🎙️</span> สร้างโจทย์เสียง
+          </Link>
+
+          <Link href="/play/audio" style={s.link(isActive("/play/audio"))}>
+            <span style={s.icon}>🎙️</span> โจทย์เสียง
+          </Link>
+
           <p style={s.menuLabel}>REPORT</p>
           <Link href="/trainer/results" style={s.link(isActive("/trainer/results"))}>
             <span style={s.icon}>📊</span> ผลคะแนน
