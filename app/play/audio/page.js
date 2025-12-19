@@ -19,34 +19,38 @@ function RegistrationForm() {
     setLoading(true)
 
     try {
-      // ✨ แก้ไขชื่อคอลัมน์ให้ตรงกับฐานข้อมูลที่เราปรับปรุงใหม่
+      // ✨ ปรับปรุงจุดนี้: ใช้ '*' เพื่อความแน่นอน และดึงข้อมูลตามเลข PIN
       const { data: session, error } = await supabase
         .from('game_sessions')
-        .select('id, target_department, target_level') // เปลี่ยนจาก target_segment เป็น target_level
-        .eq('pin', pin.trim()) // เปลี่ยนจาก pin_code เป็น pin
+        .select('*') 
+        .eq('pin', pin.trim())
         .single()
 
       if (error || !session) {
-        alert('❌ ไม่พบรหัส PIN นี้ในระบบ กรุณาตรวจสอบอีกครั้ง')
+        // ถ้าขึ้น PGRST116 จะมาตกที่นี่ แปลว่าเลข PIN ในตารางกับที่กรอกไม่ตรงกัน
+        console.error('รายละเอียดปัญหา:', error)
+        alert('❌ ไม่พบรหัส PIN นี้ในระบบ กรุณาตรวจสอบเลข PIN อีกครั้งครับ')
         setLoading(false)
         return
       }
 
-      // บันทึกข้อมูลลง LocalStorage เหมือนเดิม
+      // บันทึกข้อมูลลง LocalStorage (คงเดิม)
       localStorage.setItem('player_name', fullname)
       localStorage.setItem('player_dept', department) 
       localStorage.setItem('player_level', level)
-      localStorage.setItem('room_segment', session.target_level) // เปลี่ยนจาก target_segment เป็น target_level
+      // ใช้ข้อมูลที่ดึงมาจาก session (ซึ่งตอนนี้มีครบทุกคอลัมน์เพราะใช้ '*')
+      localStorage.setItem('room_segment', session.target_level || '') 
 
       router.push(`/play/audio-game/${session.id}`)
     } catch (err) {
+      console.error('Catch Error:', err)
       alert("เกิดข้อผิดพลาดในการเชื่อมต่อ")
     } finally {
       setLoading(false)
     }
   }
 
-  // --- ส่วนหน้าตา (UI) คงเดิมทุกประการ ---
+  // --- ส่วนหน้าตา (UI) คงเดิมทุกประการตามที่คุณต้องการ ---
   return (
     <div style={s.page}>
       <div style={s.card}>
