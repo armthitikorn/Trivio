@@ -26,8 +26,7 @@ export default function SmartAudioArena() {
   async function fetchTargetQuestions() {
     setLoading(true)
     try {
-      // 1. ดึงข้อมูล Session เพื่อดูว่าเป็นแผนกไหน
-      const { data: session, error: sError } = await supabase
+      const { data: session } = await supabase
         .from('game_sessions')
         .select('*')
         .eq('id', id)
@@ -36,11 +35,11 @@ export default function SmartAudioArena() {
       if (session) {
         setSessionInfo(session)
         
-        // 2. ดึงโจทย์จากตาราง questions ตามโครงสร้างจริงในรูปภาพของคุณ
-        const { data: qs, error: qError } = await supabase
+        // ดึงโจทย์ตามแผนกที่ระบุ (เช่น UOB)
+        const { data: qs } = await supabase
           .from('questions')
           .select('*')
-          .eq('target_department', session.target_department) // ดึงตามแผนกที่ตรงกัน (เช่น UOB)
+          .eq('target_department', session.target_department) 
           .order('created_at', { ascending: true })
         
         if (qs && qs.length > 0) {
@@ -82,18 +81,15 @@ export default function SmartAudioArena() {
     if (!audioUrl || uploading) return
     setUploading(true)
     const nickname = localStorage.getItem('player_name') || 'User'
-    
     const fileName = `answers/${sessionInfo?.target_department || 'General'}/${id}/${Date.now()}.wav`
 
     try {
-      // อัปโหลดเสียงไปยัง Storage
       const { error: upError } = await supabase.storage
         .from('recordings')
         .upload(fileName, audioUrl.blob)
 
       if (upError) throw upError
 
-      // บันทึกลงตาราง answers
       await supabase.from('answers').insert([{
         session_id: id,
         question_id: questions[currentIndex]?.id,
@@ -124,15 +120,18 @@ export default function SmartAudioArena() {
   if (questions.length === 0) return (
     <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100vh', background:'#282c34', color:'white', textAlign:'center', padding:'20px' }}>
       <h2>❌ ไม่พบโจทย์ในแผนก {sessionInfo?.target_department}</h2>
-      <p>กรุณาตรวจสอบตาราง questions ว่าระบุ target_department ตรงกันหรือไม่</p>
-      <button onClick={() => router.back()} style={{ marginTop:'20px', padding:'10px 20px', borderRadius:'10px' }}>กลับไปเช็ค PIN</button>
+      <button onClick={() => router.back()} style={{ marginTop:'20px', padding:'10px 20px', borderRadius:'10px', cursor:'pointer' }}>กลับไปเช็ค PIN</button>
     </div>
   )
 
   const currentQ = questions[currentIndex]
-  // ✨ ดึงไฟล์เสียงจากคอลัมน์ audio_question_url ตามฐานข้อมูลของคุณ
-  const qAudioUrl = currentQ?.audio_question_url 
-    ? supabase.storage.from('recordings').getPublicUrl(currentQ.audio_question_url).data.publicUrl 
+
+  // ✨ จุดแก้ไขสำคัญ: ดึง Path จากคอลัมน์ 'text' และจัดการเครื่องหมาย /
+  const rawPath = currentQ?.text || ""
+  const cleanPath = rawPath.startsWith('/') ? rawPath.substring(1) : rawPath
+  
+  const qAudioUrl = cleanPath 
+    ? supabase.storage.from('recordings').getPublicUrl(cleanPath).data.publicUrl 
     : null
 
   return (
@@ -151,13 +150,13 @@ export default function SmartAudioArena() {
         <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '15px', border: '1px solid #eee', margin: '20px 0' }}>
           <p style={{ fontWeight: 'bold', marginBottom: '10px', color:'#555' }}>👂 ฟังเสียงลูกค้า:</p>
           {qAudioUrl ? (
-            <audio src={qAudioUrl} controls style={{ width: '100%' }} />
+            <audio key={qAudioUrl} src={qAudioUrl} controls style={{ width: '100%' }} />
           ) : (
-            <p style={{color:'red', fontSize:'0.8rem'}}>* ไม่พบลิงก์เสียงในระบบ</p>
+            <p style={{color:'red', fontSize:'0.8rem'}}>* ไม่พบไฟล์เสียงในระบบ (Path: {rawPath})</p>
           )}
-          {/* ✨ แสดงผลจากคอลัมน์ text ตามฐานข้อมูลของคุณ */}
-          <p style={{ marginTop: '15px', fontSize: '1.2rem', fontWeight: 'bold', color: '#333' }}>
-            โจทย์: {currentQ?.text || "ฟังเสียงแล้วเลือกตอบโต้ให้เหมาะสม"}
+          
+          <p style={{ marginTop: '15px', fontSize: '1.1rem', fontWeight: 'bold', color: '#333' }}>
+            ภารกิจ: {currentQ?.category} - ตอบโต้ลูกค้าให้เหมาะสม
           </p>
         </div>
 
