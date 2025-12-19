@@ -208,28 +208,105 @@ const handleSave = async () => {
 
 // --- รวม Styles ทั้งหมด ---
 const styles = {
-  pageBackground: { background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', minHeight: '100vh', padding: '40px 20px' },
-  container: { maxWidth: '800px', margin: '0 auto' },
-  headerTitle: { fontSize: '2rem', fontWeight: '800', color: '#2d3436', textAlign: 'center', marginBottom: '30px' },
-  glassCard: { background: 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(10px)', padding: '30px', borderRadius: '30px', boxShadow: '0 20px 50px rgba(0,0,0,0.1)' },
-  videoFrame: { width: '100%', aspectRatio: '16/9', background: '#1e1e1e', borderRadius: '20px', overflow: 'hidden', position: 'relative', border: '5px solid #fff', boxShadow: '0 10px 20px rgba(0,0,0,0.2)' },
+  // พื้นหลัง: ปรับ Padding ให้เหลือน้อยลงเมื่ออยู่บนมือถือ (ใช้ 10px แทน 20px)
+  pageBackground: { 
+    background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', 
+    minHeight: '100vh', 
+    padding: '20px 10px', // ลด Padding ขอบจอลงเพื่อให้พื้นที่ในมือถือมากขึ้น
+    boxSizing: 'border-box'
+  },
+
+  // กล่องบรรจุเนื้อหา: ล็อกความกว้างสูงสุดไว้ แต่ให้ยืดหยุ่น 95% ของหน้าจอ
+  container: { 
+    width: '95%', // ยืดเกือบเต็มจอในมือถือ
+    maxWidth: '800px', // ไม่ให้กว้างเกินไปจนดูยากใน Notebook
+    margin: '0 auto' 
+  },
+
+  headerTitle: { 
+    fontSize: 'clamp(1.5rem, 5vw, 2rem)', // ✨ ปรับขนาดอัตโนมัติตามจอ (เล็กในมือถือ ใหญ่ในคอม)
+    fontWeight: '800', 
+    color: '#2d3436', 
+    textAlign: 'center', 
+    marginBottom: '20px' 
+  },
+
+  glassCard: { 
+    background: 'rgba(255, 255, 255, 0.9)', 
+    backdropFilter: 'blur(10px)', 
+    padding: 'clamp(15px, 4vw, 30px)', // ปรับระยะห่างในบัตรตามขนาดจอ
+    borderRadius: '25px', 
+    boxShadow: '0 20px 50px rgba(0,0,0,0.1)' 
+  },
+
+  // กรอบวิดีโอ: ล็อก 16:9 ไว้เสมอเพื่อไม่ให้ภาพเบี้ยว
+  videoFrame: { 
+    width: '100%', 
+    aspectRatio: '16/9', 
+    background: '#1e1e1e', 
+    borderRadius: '20px', 
+    overflow: 'hidden', 
+    position: 'relative', 
+    border: '3px solid #fff', // ลดขนาดขอบลงนิดนึงเพื่อให้ดูโปร่งขึ้น
+    boxShadow: '0 10px 20px rgba(0,0,0,0.2)' 
+  },
+
   videoElement: { width: '100%', height: '100%', objectFit: 'cover' },
-  modernInput: { width: '100%', padding: '15px', borderRadius: '15px', border: '2px solid #eee', marginBottom: '20px', fontSize: '1.1rem', outline: 'none', boxSizing: 'border-box' },
+
+  modernInput: { 
+    width: '100%', 
+    padding: '12px 15px', 
+    borderRadius: '12px', 
+    border: '2px solid #eee', 
+    marginBottom: '15px', 
+    fontSize: '1rem', 
+    outline: 'none', 
+    boxSizing: 'border-box' 
+  },
+
   placeholder: { height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  controlArea: { marginTop: '20px', textAlign: 'center' },
-  recordBtn: { padding: '12px 30px', background: '#ff4757', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold', cursor: 'pointer' },
-  stopBtn: { padding: '12px 30px', background: '#2d3436', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold', cursor: 'pointer' },
-  saveBtn: { padding: '12px 30px', background: '#2ed573', color: 'white', border: 'none', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer', marginLeft: '10px' },
-  actionBtn: { padding: '15px 30px', background: '#0984e3', color: 'white', border: 'none', borderRadius: '15px', cursor: 'pointer', fontWeight: 'bold' },
+  controlArea: { marginTop: '20px', textAlign: 'center', display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }, // ✨ เพิ่ม flexWrap เพื่อให้ปุ่มตกลงมาบรรทัดใหม่ได้ถ้าจอมือถือแคบมาก
+
+  recordBtn: { padding: '12px 25px', background: '#ff4757', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' },
+  stopBtn: { padding: '12px 25px', background: '#2d3436', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' },
+  saveBtn: { padding: '12px 25px', background: '#2ed573', color: 'white', border: 'none', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' },
+  actionBtn: { width: '100%', padding: '15px', background: '#0984e3', color: 'white', border: 'none', borderRadius: '15px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.1rem' },
+
   limitContainer: { marginBottom: '15px', padding: '0 5px' },
   progressBg: { width: '100%', height: '8px', background: '#eee', borderRadius: '10px', overflow: 'hidden' },
   progressFill: { height: '100%', transition: 'width 0.3s ease' },
-  overlayStatus: { position: 'absolute', top: '15px', right: '15px' },
-  recTag: { background: '#ff4757', color: 'white', padding: '5px 15px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold' },
-  readyTag: { background: '#2ed573', color: 'white', padding: '5px 15px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold' },
-  
-  // Styles สำหรับรายการด้านล่าง
-  listGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' },
-  itemCard: { background: 'rgba(255,255,255,0.7)', padding: '20px', borderRadius: '20px', border: '1px solid #fff' },
-  smallBtn: (bg, color) => ({ flex: 1, padding: '10px', background: bg, color: color, border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' })
+  overlayStatus: { position: 'absolute', top: '10px', right: '10px' },
+  recTag: { background: '#ff4757', color: 'white', padding: '4px 12px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold' },
+  readyTag: { background: '#2ed573', color: 'white', padding: '4px 12px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold' },
+
+  // --- จุดสำคัญ: รายการโจทย์ด้านล่าง ---
+  // ใช้ grid-template-columns แบบ auto-fit เพื่อให้ในคอมโชว์ 2 แถว ในมือถือโชว์แถวเดียวอัตโนมัติ
+  listGrid: { 
+    display: 'grid', 
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', // ✨ ถ้าจอแคบกว่า 280px จะตัดลงมาแถวเดียวเอง
+    gap: '15px', 
+    marginTop: '30px' 
+  },
+
+  itemCard: { 
+    background: 'rgba(255,255,255,0.7)', 
+    padding: '15px', 
+    borderRadius: '20px', 
+    border: '1px solid #fff',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between'
+  },
+
+  smallBtn: (bg, color) => ({ 
+    padding: '8px', 
+    background: bg, 
+    color: color, 
+    border: 'none', 
+    borderRadius: '10px', 
+    fontWeight: 'bold', 
+    cursor: 'pointer', 
+    fontSize: '0.85rem',
+    marginTop: '10px'
+  })
 }
