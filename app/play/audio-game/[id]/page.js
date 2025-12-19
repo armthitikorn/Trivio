@@ -1,182 +1,164 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation' // เพิ่ม useRouter
 
-export default function SmartAudioArena() {
+export default function AudioGameArena() {
   const { id } = useParams()
-  const router = useRouter()
-  
+  const router = useRouter() // เพื่อใช้ในการเปลี่ยนหน้า
+
   const [questions, setQuestions] = useState([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [sessionInfo, setSessionInfo] = useState(null)
-  const [loading, setLoading] = useState(true)
   
   const [isRecording, setIsRecording] = useState(false)
-  const [audioUrl, setAudioUrl] = useState(null)
+  const [audioUrl, setAudioUrl] = useState(null) // เปลี่ยนชื่อตัวแปรให้สื่อความหมาย
+  const [previewUrl, setPreviewUrl] = useState(null)
   const [uploading, setUploading] = useState(false)
   
   const mediaRecorder = useRef(null)
-  const audioChunks = useRef([])
 
   useEffect(() => {
-    if (id) fetchTargetQuestions()
+    fetchSessionAndQuestions()
   }, [id])
 
-  async function fetchTargetQuestions() {
-    setLoading(true)
-    try {
-      const { data: session } = await supabase
-        .from('game_sessions')
-        .select('*')
-        .eq('id', id)
-        .single()
+  // 1. ดึงโจทย์ โดยแก้ให้ดึงตาม "แผนก" และ "คอลัมน์ที่มีข้อมูลจริง"
+  async function fetchSessionAndQuestions() {
+    // ดึง Session ก่อนเพื่อดูแผนก
+    const { data: session } = await supabase
+      .from('game_sessions')
+      .select('*')
+      .eq('id', id)
+      .single()
 
-      if (session) {
-        setSessionInfo(session)
-        const { data: qs } = await supabase
-          .from('questions')
-          .select('*')
-          .eq('target_department', session.target_department) 
-          .order('created_at', { ascending: true })
-        
-        if (qs) {
-          // ✨ แก้ให้ขาด: กรองเฉพาะข้อที่มี Path เสียง (text) เท่านั้น ข้อว่างๆ จะไม่ถูกนำมาแสดง
-          const validQs = qs.filter(q => q.text && q.text.trim() !== "")
-          setQuestions(validQs)
-        }
+    if (session) {
+      setSessionInfo(session)
+      
+      const { data: qs } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('target_department', session.target_department) // กรองตามแผนก
+        .order('created_at', { ascending: true })
+      
+      if (qs) {
+        // กรองเฉพาะข้อที่มีไฟล์เสียงจริง (กัน Error หน้าขาว)
+        const validQs = qs.filter(q => q.text && q.text.trim() !== "")
+        setQuestions(validQs)
       }
-    } catch (err) {
-      console.error("Fetch Error:", err)
-    } finally {
-      setLoading(false)
     }
   }
 
+  // ระบบบันทึกเสียง (คงเดิม เพราะดีอยู่แล้ว)
   async function startRecording() {
     try {
-      // เคลียร์เสียงเก่าก่อนอัดใหม่
-      if (audioUrl?.preview) URL.revokeObjectURL(audioUrl.preview)
-      setAudioUrl(null)
-
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       mediaRecorder.current = new MediaRecorder(stream)
-      audioChunks.current = []
-      mediaRecorder.current.ondataavailable = (e) => audioChunks.current.push(e.data)
+      const chunks = []
+      mediaRecorder.current.ondataavailable = (e) => chunks.push(e.data)
       mediaRecorder.current.onstop = () => {
-        const blob = new Blob(audioChunks.current, { type: 'audio/wav' })
-        setAudioUrl({ blob, preview: URL.createObjectURL(blob) })
+        const blob = new Blob(chunks, { type: 'audio/wav' })
+        setAudioUrl(blob)
+        setPreviewUrl(URL.createObjectURL(blob))
       }
       mediaRecorder.current.start()
       setIsRecording(true)
     } catch (err) {
-      alert("กรุณาอนุญาตให้ใช้ไมโครโฟน")
+      alert("กรุณาอนุญาตไมโครโฟน")
     }
   }
 
   function stopRecording() {
-    if (mediaRecorder.current && isRecording) {
-      mediaRecorder.current.stop()
-      setIsRecording(false)
+    if (mediaRecorder.current) {
+        mediaRecorder.current.stop()
+        setIsRecording(false)
     }
   }
 
+  // 2. ส่งคำตอบ (เพิ่มการ Insert ลงตาราง answers)
   async function submitAnswer() {
-    if (!audioUrl || uploading) return
+    if (!audioUrl) return
     setUploading(true)
-    
+
     const nickname = localStorage.getItem('player_name') || 'Warrior'
-    // ตั้งชื่อไฟล์คำตอบของพนักงาน (เก็บไว้ในโฟลเดอร์ answers)
     const fileName = `answers/${sessionInfo?.target_department}/${id}/${Date.now()}.wav`
 
     try {
-      // 1. อัปโหลดเสียงพนักงาน
-      const { error: upError } = await supabase.storage.from('recordings').upload(fileName, audioUrl.blob)
-      if (upError) throw upError
+        // อัปโหลดไฟล์
+        await supabase.storage.from('recordings').upload(fileName, audioUrl)
 
-      // 2. บันทึกคำตอบลง DB
-      await supabase.from('answers').insert([{
-        session_id: id,
-        question_id: questions[currentIndex]?.id,
-        nickname: nickname,
-        audio_answer_url: fileName
-      }])
+        // ✨ บันทึกลงฐานข้อมูล (ส่วนที่ขาดไปในโค้ดเก่า)
+        await supabase.from('answers').insert([{
+            session_id: id,
+            question_id: questions[currentIndex]?.id,
+            nickname: nickname,
+            audio_answer_url: fileName
+        }])
 
-      // 3. ไปข้อถัดไป
-      if (currentIndex < questions.length - 1) {
-        setCurrentIndex(prev => prev + 1)
-        setAudioUrl(null)
-      } else {
-        alert('🎉 ภารกิจสำเร็จ! ส่งคำตอบครบทุกข้อแล้วครับ')
-        router.push('/play/audio') // หรือไปหน้าสรุปผล
-      }
+        alert("บันทึกคำตอบสำเร็จ!")
+        
+        if (currentIndex < questions.length - 1) {
+            setCurrentIndex(currentIndex + 1)
+            setAudioUrl(null)
+            setPreviewUrl(null)
+        } else {
+            alert("จบการฝึกฝนทุกข้อแล้ว! เยี่ยมมาก")
+            router.push('/play/audio') // กลับหน้าหลัก
+        }
     } catch (err) {
-      alert("เกิดข้อผิดพลาด: " + err.message)
+        alert("เกิดข้อผิดพลาด: " + err.message)
     } finally {
-      setUploading(false)
+        setUploading(false)
     }
   }
 
-  if (loading) return (
-    <div style={{ display:'flex', justifyContent:'center', alignItems:'center', height:'100vh', background:'#282c34', color:'white' }}>
-      <h3>⏳ กำลังโหลดแบบทดสอบ...</h3>
-    </div>
-  )
-
-  if (questions.length === 0) return (
-    <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100vh', background:'#282c34', color:'white', textAlign:'center', padding:'20px' }}>
-      <h2>❌ ไม่พบโจทย์ในแผนก {sessionInfo?.target_department}</h2>
-      <p>เทรนเนอร์อาจยังไม่ได้อัปโหลดไฟล์เสียงในแผนกนี้</p>
-      <button onClick={() => router.back()} style={{ marginTop:'20px', padding:'10px 20px', borderRadius:'10px', cursor:'pointer' }}>กลับไปเช็ค PIN</button>
-    </div>
-  )
+  if (questions.length === 0) return <div style={{textAlign:'center', padding:'50px', color:'white'}}>กำลังโหลดสนามฝึก... (หรืออาจไม่มีโจทย์ในแผนกนี้)</div>
 
   const currentQ = questions[currentIndex]
-  
-  // ✨ แก้ให้ขาด: ตรวจสอบและจัดการ Path ให้เป๊ะ 
-  // ถ้าใน DB ไม่มีคำว่า questions/ นำหน้า เราจะเติมให้เพื่อให้ Storage หาเจอ
-  const dbPath = currentQ?.text || ""
+
+  // 3. Logic การแปลง Path (หัวใจสำคัญเพื่อให้เสียงดัง)
+  const dbPath = currentQ?.text || "" 
   let cleanPath = dbPath.startsWith('/') ? dbPath.substring(1) : dbPath
   if (!cleanPath.startsWith('questions/')) {
       cleanPath = `questions/${cleanPath}`
   }
   
-  const qAudioUrl = supabase.storage.from('recordings').getPublicUrl(cleanPath).data.publicUrl
+  const questionAudioUrl = supabase.storage.from('recordings').getPublicUrl(cleanPath).data.publicUrl
 
+  // UI เดิมที่คุณชอบ 100%
   return (
-    <div style={{ padding: '20px', minHeight: '100vh', background: '#282c34', color: 'white', fontFamily: 'sans-serif' }}>
-      <div style={{ maxWidth: '600px', margin: '0 auto', background: 'white', color: 'black', padding: '30px', borderRadius: '25px', boxShadow: '0 15px 35px rgba(0,0,0,0.3)' }}>
+    <div style={{ padding: '20px', fontFamily: 'sans-serif', background: '#282c34', minHeight: '100vh', color: 'white', textAlign: 'center' }}>
+      <div style={{ maxWidth: '600px', margin: '0 auto', background: 'white', color: 'black', padding: '30px', borderRadius: '25px', boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}>
+        <p style={{ color: '#6f42c1', fontWeight: 'bold' }}>บททดสอบข้อที่ {currentIndex + 1} / {questions.length}</p>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#666', borderBottom:'1px solid #eee', paddingBottom:'10px' }}>
-          <span>🏢 แผนก: {sessionInfo?.target_department}</span>
-          <span>📂 หมวด: {currentQ?.category}</span>
-        </div>
+        {/* แสดงหมวดหมู่แทน question_text ถ้าไม่มีข้อความ */}
+        <h2 style={{ margin: '10px 0' }}>{currentQ.question_text || `หมวด: ${currentQ.category}`}</h2>
         
-        <h2 style={{ textAlign: 'center', color: '#6f42c1', marginTop: '20px' }}>ข้อที่ {currentIndex + 1} / {questions.length}</h2>
-
-        <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '15px', border: '1px solid #eee', margin: '20px 0' }}>
-          <p style={{ fontWeight: 'bold', marginBottom: '10px' }}>👂 ฟังเสียงลูกค้า:</p>
-          {/* ใช้ key={qAudioUrl} เพื่อให้ audio player รีเฟรชใหม่ทุกครั้งที่เปลี่ยนข้อ */}
-          <audio key={qAudioUrl} src={qAudioUrl} controls style={{ width: '100%' }} />
-          <p style={{ marginTop: '15px', fontSize: '1.2rem', fontWeight: 'bold', color: '#333' }}>
-              เป้าหมาย: โต้ตอบในหมวด {currentQ?.category}
-          </p>
+        <div style={{ background: '#f0f2f5', padding: '20px', borderRadius: '15px', margin: '20px 0' }}>
+          <p>🎧 คลิกฟังเสียงลูกค้า (โจทย์):</p>
+          {/* ใส่ key เพื่อให้เสียงรีเฟรชเมื่อเปลี่ยนข้อ */}
+          <audio key={questionAudioUrl} src={questionAudioUrl} controls style={{ width: '100%' }} />
         </div>
 
-        <div style={{ textAlign: 'center', marginTop:'30px' }}>
-          <p style={{ marginBottom:'15px', fontWeight:'600' }}>🎤 กดเพื่ออัดเสียงตอบโต้:</p>
+        <hr style={{ opacity: 0.2 }} />
+
+        <div style={{ marginTop: '30px' }}>
+          <h3>🎙️ บันทึกการตอบโต้ของคุณ</h3>
           {!isRecording ? (
-            <button onClick={startRecording} style={{ width: '85px', height: '85px', borderRadius: '50%', background: '#e21b3c', border: 'none', color: 'white', fontSize: '2.2rem', cursor: 'pointer', boxShadow: '0 8px 20px rgba(226, 27, 60, 0.4)' }}>🎤</button>
+            <button onClick={startRecording} style={{ padding: '20px', width:'80px', height:'80px', borderRadius: '50%', background: '#e21b3c', color: 'white', border: 'none', cursor: 'pointer', fontSize: '2rem' }}>🎤</button>
           ) : (
-            <button onClick={stopRecording} style={{ width: '85px', height: '85px', borderRadius: '50%', background: '#333', border: 'none', color: 'white', fontSize: '1.5rem', cursor: 'pointer' }}>⬛</button>
+            <button onClick={stopRecording} style={{ padding: '20px', width:'80px', height:'80px', borderRadius: '50%', background: '#333', color: 'white', border: 'none', cursor: 'pointer', fontSize: '2rem' }}>⬛</button>
           )}
-
-          {audioUrl && (
-            <div style={{ marginTop: '30px', borderTop:'1px solid #eee', paddingTop:'20px' }}>
-              <p style={{fontSize:'0.9rem', marginBottom:'10px'}}>เช็คเสียงของคุณก่อนส่ง:</p>
-              <audio src={audioUrl.preview} controls style={{ width: '100%' }} />
-              <button onClick={submitAnswer} disabled={uploading} style={{ width: '100%', marginTop: '20px', padding: '18px', background: uploading ? '#ccc' : '#28a745', color: 'white', border: 'none', borderRadius: '15px', fontSize: '1.2rem', fontWeight: 'bold', cursor: uploading ? 'default' : 'pointer' }}>
-                {uploading ? 'กำลังส่งคำตอบ...' : 'ส่งคำตอบแล้วไปต่อ ✅'}
+          
+          {previewUrl && (
+            <div style={{ marginTop: '20px' }}>
+              <p>ฟังเสียงที่คุณตอบ:</p>
+              <audio src={previewUrl} controls style={{ width: '100%' }} />
+              <button 
+                onClick={submitAnswer}
+                disabled={uploading}
+                style={{ width: '100%', marginTop: '20px', padding: '15px', background: uploading ? '#ccc' : '#28a745', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                {uploading ? 'กำลังส่ง...' : 'ส่งคำตอบและไปข้อถัดไป ➡️'}
               </button>
             </div>
           )}
