@@ -25,10 +25,12 @@ export default function ClientLayout({ children }) {
           <Link href="/trainer/video-creator" style={s.link(isActive("/trainer/video-creator"))}>
             <span style={s.icon}>🎬</span> โจทย์วิดีโอ
           </Link>
+          <Link href="/play/audio" style={s.link(isActive("/play/audio"))}>
+            <span style={s.icon}>🎙️</span> โจทย์เสียง
+          </Link>
           <Link href="/host" style={s.link(isActive("/host"))}>
             <span style={s.icon}>🎮</span> ควิซ PIN
           </Link>
-          
           <p style={s.menuLabel}>REPORT</p>
           <Link href="/trainer/results" style={s.link(isActive("/trainer/results"))}>
             <span style={s.icon}>📊</span> ผลคะแนน
