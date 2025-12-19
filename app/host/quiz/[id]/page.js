@@ -26,10 +26,26 @@ export default function QuizEditor() {
     }
   }, [id])
 
-  async function fetchQuizDetails() {
-    const { data } = await supabase.from('quizzes').select('title').eq('id', id).single()
-    if (data) setQuizTitle(data.title)
+async function fetchQuizDetails() {
+  // 1. ดึง User ที่กำลังใช้งานอยู่
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return router.push('/login');
+
+  // 2. ดึงข้อมูล Quiz โดยต้องเช็ค id และ user_id ให้ตรงกัน
+  const { data, error } = await supabase
+    .from('quizzes')
+    .select('title, user_id')
+    .eq('id', id)
+    .eq('user_id', user.id) // ✨ เช็คว่า Quiz นี้เป็นของเราไหม
+    .single();
+
+  if (error || !data) {
+    alert("ขออภัย คุณไม่มีสิทธิ์แก้ไขข้อสอบชุดนี้");
+    return router.push('/host'); // ถ้าไม่ใช่เจ้าของ ให้เด้งกลับหน้าหลัก
   }
+
+  setQuizTitle(data.title);
+}
 
   async function fetchQuestions() {
     const { data } = await supabase
