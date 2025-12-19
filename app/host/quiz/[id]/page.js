@@ -19,12 +19,25 @@ export default function QuizEditor() {
   })
 
   // โหลดข้อมูลเมื่อเข้าหน้านี้
-  useEffect(() => {
+// แก้ไข useEffect เดิมให้เป็นแบบนี้
+useEffect(() => {
+  const checkUserAndFetch = async () => {
     if (id) {
-      fetchQuizDetails()
-      fetchQuestions()
+      // 1. ดึง User มาก่อน
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+      
+      // 2. ถ้ามี User แล้วค่อยไปดึงข้อมูลควิซและคำถาม
+      fetchQuizDetails();
+      fetchQuestions();
     }
-  }, [id])
+  };
+
+  checkUserAndFetch();
+}, [id]);
 
 async function fetchQuizDetails() {
   // 1. ดึง User ที่กำลังใช้งานอยู่

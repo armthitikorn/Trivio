@@ -64,15 +64,23 @@ export default function SmartAudioArena() {
     setIsRecording(false)
   }
 
-  async function submitAnswer() {
+async function submitAnswer() {
     if (!audioUrl) return
     setUploading(true)
     const nickname = localStorage.getItem('player_name') || 'Warrior'
     
-    // ตั้งชื่อไฟล์คำตอบให้ระบุแผนกด้วยเพื่อความง่ายในการตรวจ
+    // ✅ กลับมาใช้ Bucket 'recordings' ตามที่คุณแจ้ง
     const fileName = `answers/${sessionInfo.target_department}/${id}/${Date.now()}.wav`
 
-    await supabase.storage.from('recordings').upload(fileName, audioUrl.blob)
+    const { error: upError } = await supabase.storage
+      .from('recordings') // ✨ แก้จุดนี้ให้ตรงกับ Bucket ของคุณ
+      .upload(fileName, audioUrl.blob)
+
+    if (upError) {
+        alert("อัปโหลดไม่สำเร็จ: " + upError.message)
+        setUploading(false)
+        return
+    }
 
     await supabase.from('answers').insert([{
       session_id: id,
@@ -85,20 +93,17 @@ export default function SmartAudioArena() {
       setCurrentIndex(currentIndex + 1)
       setAudioUrl(null)
     } else {
-      alert('คุณทำภารกิจครบทุกข้อแล้ว! รอผลคะแนนจากหัวหน้าได้เลย')
+      alert('🎉 คุณทำภารกิจครบทุกข้อแล้ว!')
       router.push('/play/audio')
     }
     setUploading(false)
   }
 
-  if (questions.length === 0) return (
-    <div style={{ textAlign: 'center', padding: '100px', color: 'white', background: '#1a1a1a', minHeight: '100vh' }}>
-       <h3>📭 ไม่พบโจทย์สำหรับแผนก {sessionInfo?.target_department}</h3>
-       <p>กรุณาติดต่อหัวหน้าให้เพิ่มโจทย์ในหมวด {sessionInfo?.category} ก่อนครับ</p>
-    </div>
-  )
+  // ... 
 
   const currentQ = questions[currentIndex]
+  // ✅ ดึง URL จาก Bucket 'recordings'
+  // ✅ และใช้คอลัมน์ 'media_url' ตามโครงสร้างเดิมที่คุณส่งมา
   const qAudioUrl = supabase.storage.from('recordings').getPublicUrl(currentQ.media_url).data.publicUrl
 
   return (
