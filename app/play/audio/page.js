@@ -1,5 +1,5 @@
 'use client'
-import { useState, Suspense } from 'react' // เพิ่ม Suspense
+import { useState, Suspense } from 'react' 
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 
@@ -19,10 +19,11 @@ function RegistrationForm() {
     setLoading(true)
 
     try {
+      // ✨ แก้ไขชื่อคอลัมน์ให้ตรงกับฐานข้อมูลที่เราปรับปรุงใหม่
       const { data: session, error } = await supabase
         .from('game_sessions')
-        .select('id, target_department, target_segment') 
-        .eq('pin_code', pin.trim())
+        .select('id, target_department, target_level') // เปลี่ยนจาก target_segment เป็น target_level
+        .eq('pin', pin.trim()) // เปลี่ยนจาก pin_code เป็น pin
         .single()
 
       if (error || !session) {
@@ -31,11 +32,11 @@ function RegistrationForm() {
         return
       }
 
-      // บันทึกข้อมูลลง LocalStorage (ตามเดิมของคุณ)
+      // บันทึกข้อมูลลง LocalStorage เหมือนเดิม
       localStorage.setItem('player_name', fullname)
       localStorage.setItem('player_dept', department) 
       localStorage.setItem('player_level', level)
-      localStorage.setItem('room_segment', session.target_segment)
+      localStorage.setItem('room_segment', session.target_level) // เปลี่ยนจาก target_segment เป็น target_level
 
       router.push(`/play/audio-game/${session.id}`)
     } catch (err) {
@@ -45,6 +46,7 @@ function RegistrationForm() {
     }
   }
 
+  // --- ส่วนหน้าตา (UI) คงเดิมทุกประการ ---
   return (
     <div style={s.page}>
       <div style={s.card}>
@@ -81,7 +83,6 @@ function RegistrationForm() {
   )
 }
 
-// ฟังก์ชันหลักที่ส่งออก พร้อมหุ้ม Suspense เพื่อความปลอดภัย
 export default function PlayerRegistration() {
   return (
     <Suspense fallback={<div style={{color:'white', textAlign:'center', paddingTop:'50px'}}>กำลังโหลดหน้าลงทะเบียน...</div>}>
