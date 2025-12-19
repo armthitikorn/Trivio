@@ -15,23 +15,23 @@ export default function JoinGame() {
 
     try {
       // 1. ตรวจสอบ PIN ในตาราง game_sessions
+      // ใช้คอลัมน์ 'pin' ตามที่เราสร้างไว้ล่าสุด
       const { data: session, error: sessionError } = await supabase
         .from('game_sessions')
-        .select('id')
-        .eq('pin_code', pin)
-        .eq('current_state', 'WAITING')
+        .select('id, target_department, target_level')
+        .eq('pin', pin)
         .single()
 
       if (sessionError || !session) {
-        alert('❌ ไม่พบห้องนี้ หรือเกมเริ่มไปแล้วครับ')
+        alert('❌ ไม่พบรหัส PIN นี้ในระบบครับ')
         setLoading(false)
         return
       }
 
-      // 2. บันทึกชื่อเล่นลงเครื่อง (localStorage) เพื่อใช้ในหน้าถัดไป
+      // 2. บันทึกชื่อเล่นลงเครื่อง
       localStorage.setItem('nickname', nickname)
 
-      // 3. เพิ่มชื่อผู้เล่นลงในตาราง players
+      // 3. เพิ่มชื่อผู้เล่นลงในตาราง players เพื่อเก็บคะแนน
       const { data: player, error: playerError } = await supabase
         .from('players')
         .insert([
@@ -48,8 +48,8 @@ export default function JoinGame() {
         alert('เข้าห้องไม่ได้ ลองเปลี่ยนชื่อเล่นดูครับ')
         setLoading(false)
       } else {
-        // ✨ จุดสำคัญ: ต้องมั่นใจว่าคุณมีโฟลเดอร์ app/play/lobby/[id]/page.js อยู่จริง
-        router.push(`/play/lobby/${session.id}`) 
+        // ✨ นำทางไปยังหน้าทำข้อสอบเสียง (ส่ง Session ID ไปด้วย)
+        router.push(`/play/audio-game/${session.id}`) 
       }
     } catch (err) {
       console.error(err)
@@ -61,14 +61,14 @@ export default function JoinGame() {
   return (
     <div style={s.container}>
       <div style={s.card}>
-        <h1 style={s.title}>🎮 Join Quiz</h1>
-        <p style={s.subtitle}>ใส่ PIN เพื่อเริ่มการทดสอบ</p>
+        <h1 style={s.title}>🎙️ Audio Arena</h1>
+        <p style={s.subtitle}>ใส่ PIN เพื่อเริ่มการทดสอบบทสนทนา</p>
 
         <div style={s.inputArea}>
           <label style={s.label}>GAME PIN</label>
           <input 
             type="text" 
-            placeholder="เช่น 123456" 
+            placeholder="กรอกรหัส 6 หลัก" 
             value={pin}
             onChange={(e) => setPin(e.target.value)}
             style={s.input}
@@ -79,7 +79,7 @@ export default function JoinGame() {
           <label style={s.label}>ชื่อเล่นของคุณ</label>
           <input 
             type="text" 
-            placeholder="พิมพ์ชื่อเล่น..." 
+            placeholder="เช่น สมชาย" 
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
             style={s.input}
@@ -91,14 +91,15 @@ export default function JoinGame() {
           disabled={loading}
           style={s.btn(loading)}
         >
-          {loading ? 'กำลังเข้าห้อง...' : 'เข้าร่วมเกม!'}
+          {loading ? 'กำลังเข้าห้อง...' : 'เข้าร่วมทดสอบ!'}
         </button>
       </div>
-      <p style={s.footer}>ตรวจสอบ PIN จากหน้าจอ Host ของคุณ</p>
+      <p style={s.footer}>รับ PIN จากเทรนเนอร์ของคุณเพื่อเริ่มฝึกฝน</p>
     </div>
   )
 }
 
+// คงความสวยงามและสีสันเดิมที่คุณเลือกไว้
 const s = {
   container: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#8e44ad', fontFamily: "'Inter', sans-serif" },
   card: { background: 'white', padding: '40px', borderRadius: '30px', width: '350px', boxShadow: '0 20px 50px rgba(0,0,0,0.2)', textAlign: 'center' },
