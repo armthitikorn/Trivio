@@ -34,17 +34,13 @@ export default function SmartAudioArena() {
 
       if (session) {
         setSessionInfo(session)
-        
-        // ดึงโจทย์ตามแผนกที่ระบุ (เช่น UOB)
         const { data: qs } = await supabase
           .from('questions')
           .select('*')
           .eq('target_department', session.target_department) 
           .order('created_at', { ascending: true })
         
-        if (qs && qs.length > 0) {
-          setQuestions(qs)
-        }
+        if (qs && qs.length > 0) setQuestions(qs)
       }
     } catch (err) {
       console.error("Fetch Error:", err)
@@ -53,6 +49,7 @@ export default function SmartAudioArena() {
     }
   }
 
+  // --- ระบบบันทึกเสียง ---
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -66,12 +63,12 @@ export default function SmartAudioArena() {
       mediaRecorder.current.start()
       setIsRecording(true)
     } catch (err) {
-      alert("กรุณาอนุญาตให้เข้าถึงไมโครโฟน")
+      alert("กรุณาอนุญาตให้ใช้ไมโครโฟน")
     }
   }
 
   function stopRecording() {
-    if (mediaRecorder.current && isRecording) {
+    if (mediaRecorder.current) {
       mediaRecorder.current.stop()
       setIsRecording(false)
     }
@@ -80,16 +77,11 @@ export default function SmartAudioArena() {
   async function submitAnswer() {
     if (!audioUrl || uploading) return
     setUploading(true)
-    const nickname = localStorage.getItem('player_name') || 'User'
-    const fileName = `answers/${sessionInfo?.target_department || 'General'}/${id}/${Date.now()}.wav`
+    const nickname = localStorage.getItem('player_name') || 'Warrior'
+    const fileName = `answers/${sessionInfo?.target_department}/${id}/${Date.now()}.wav`
 
     try {
-      const { error: upError } = await supabase.storage
-        .from('recordings')
-        .upload(fileName, audioUrl.blob)
-
-      if (upError) throw upError
-
+      await supabase.storage.from('recordings').upload(fileName, audioUrl.blob)
       await supabase.from('answers').insert([{
         session_id: id,
         question_id: questions[currentIndex]?.id,
@@ -101,7 +93,7 @@ export default function SmartAudioArena() {
         setCurrentIndex(currentIndex + 1)
         setAudioUrl(null)
       } else {
-        alert('🎉 เก่งมาก! คุณทำแบบทดสอบครบทุกข้อแล้ว')
+        alert('🎉 ภารกิจสำเร็จ!')
         router.push('/play/audio')
       }
     } catch (err) {
@@ -113,20 +105,20 @@ export default function SmartAudioArena() {
 
   if (loading) return (
     <div style={{ display:'flex', justifyContent:'center', alignItems:'center', height:'100vh', background:'#282c34', color:'white' }}>
-      <h3>⏳ กำลังจัดเตรียมโจทย์...</h3>
+      <h3>⏳ กำลังโหลดแบบทดสอบ...</h3>
     </div>
   )
 
   if (questions.length === 0) return (
     <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100vh', background:'#282c34', color:'white', textAlign:'center', padding:'20px' }}>
-      <h2>❌ ไม่พบโจทย์ในแผนก {sessionInfo?.target_department}</h2>
-      <button onClick={() => router.back()} style={{ marginTop:'20px', padding:'10px 20px', borderRadius:'10px', cursor:'pointer' }}>กลับไปเช็ค PIN</button>
+      <h2>❌ ไม่พบโจทย์แผนก {sessionInfo?.target_department}</h2>
+      <button onClick={() => router.back()} style={{ marginTop:'20px', padding:'10px 20px', borderRadius:'10px' }}>กลับไปเช็ค PIN</button>
     </div>
   )
 
   const currentQ = questions[currentIndex]
-
-  // ✨ จุดแก้ไขสำคัญ: ดึง Path จากคอลัมน์ 'text' และจัดการเครื่องหมาย /
+  
+  // ✨ ดึง Path จากคอลัมน์ 'text' และลบเครื่องหมาย / ตัวแรกออก (ถ้ามี)
   const rawPath = currentQ?.text || ""
   const cleanPath = rawPath.startsWith('/') ? rawPath.substring(1) : rawPath
   
@@ -140,50 +132,37 @@ export default function SmartAudioArena() {
         
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#666', borderBottom:'1px solid #eee', paddingBottom:'10px' }}>
           <span>🏢 แผนก: {sessionInfo?.target_department}</span>
-          <span>📂 หมวดหมู่: {currentQ?.category}</span>
+          <span>📂 หมวด: {currentQ?.category}</span>
         </div>
         
-        <h2 style={{ textAlign: 'center', color: '#6f42c1', marginTop: '20px' }}>
-          ข้อที่ {currentIndex + 1} / {questions.length}
-        </h2>
+        <h2 style={{ textAlign: 'center', color: '#6f42c1', marginTop: '20px' }}>ข้อที่ {currentIndex + 1} / {questions.length}</h2>
 
         <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '15px', border: '1px solid #eee', margin: '20px 0' }}>
-          <p style={{ fontWeight: 'bold', marginBottom: '10px', color:'#555' }}>👂 ฟังเสียงลูกค้า:</p>
+          <p style={{ fontWeight: 'bold', marginBottom: '10px' }}>👂 ฟังเสียงลูกค้า:</p>
           {qAudioUrl ? (
             <audio key={qAudioUrl} src={qAudioUrl} controls style={{ width: '100%' }} />
           ) : (
-            <p style={{color:'red', fontSize:'0.8rem'}}>* ไม่พบไฟล์เสียงในระบบ (Path: {rawPath})</p>
+            <p style={{color:'red'}}>* ไม่พบไฟล์เสียง (Path: {rawPath})</p>
           )}
-          
-          <p style={{ marginTop: '15px', fontSize: '1.1rem', fontWeight: 'bold', color: '#333' }}>
-            ภารกิจ: {currentQ?.category} - ตอบโต้ลูกค้าให้เหมาะสม
+          <p style={{ marginTop: '15px', fontSize: '1.2rem', fontWeight: 'bold', color: '#333' }}>
+             เป้าหมาย: โต้ตอบในหมวด {currentQ?.category}
           </p>
         </div>
 
         <div style={{ textAlign: 'center', marginTop:'30px' }}>
           <p style={{ marginBottom:'15px', fontWeight:'600' }}>🎤 กดเพื่ออัดเสียงตอบโต้:</p>
           {!isRecording ? (
-            <button 
-              onClick={startRecording} 
-              style={{ width: '85px', height: '85px', borderRadius: '50%', background: '#e21b3c', border: 'none', color: 'white', fontSize: '2.2rem', cursor: 'pointer', boxShadow: '0 8px 20px rgba(226, 27, 60, 0.4)' }}
-            >🎤</button>
+            <button onClick={startRecording} style={{ width: '85px', height: '85px', borderRadius: '50%', background: '#e21b3c', border: 'none', color: 'white', fontSize: '2.2rem', cursor: 'pointer', boxShadow: '0 8px 20px rgba(226, 27, 60, 0.4)' }}>🎤</button>
           ) : (
-            <button 
-              onClick={stopRecording} 
-              style={{ width: '85px', height: '85px', borderRadius: '50%', background: '#333', border: 'none', color: 'white', fontSize: '1.5rem', cursor: 'pointer' }}
-            >⬛</button>
+            <button onClick={stopRecording} style={{ width: '85px', height: '85px', borderRadius: '50%', background: '#333', border: 'none', color: 'white', fontSize: '1.5rem', cursor: 'pointer' }}>⬛</button>
           )}
 
           {audioUrl && (
             <div style={{ marginTop: '30px', borderTop:'1px solid #eee', paddingTop:'20px' }}>
               <p style={{fontSize:'0.9rem', marginBottom:'10px'}}>เช็คเสียงของคุณก่อนส่ง:</p>
               <audio src={audioUrl.preview} controls style={{ width: '100%' }} />
-              <button 
-                onClick={submitAnswer} 
-                disabled={uploading} 
-                style={{ width: '100%', marginTop: '20px', padding: '18px', background: uploading ? '#ccc' : '#28a745', color: 'white', border: 'none', borderRadius: '15px', fontSize: '1.2rem', fontWeight: 'bold', cursor: uploading ? 'default' : 'pointer' }}
-              >
-                {uploading ? 'กำลังอัปโหลด...' : 'ส่งคำตอบแล้วไปต่อ ✅'}
+              <button onClick={submitAnswer} disabled={uploading} style={{ width: '100%', marginTop: '20px', padding: '18px', background: uploading ? '#ccc' : '#28a745', color: 'white', border: 'none', borderRadius: '15px', fontSize: '1.2rem', fontWeight: 'bold' }}>
+                {uploading ? 'กำลังส่งคำตอบ...' : 'ส่งคำตอบแล้วไปต่อ ✅'}
               </button>
             </div>
           )}
