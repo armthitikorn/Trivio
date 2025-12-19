@@ -21,11 +21,11 @@ export default function ClientLayout({ children }) {
             <span style={s.icon}>🏠</span> หน้าแรก
           </Link>
           
-          <p style={s.menuLabel}>CREATOR STUDIO</p>
+<p style={s.menuLabel}>CREATOR STUDIO</p>
           <Link href="/trainer/video-creator" style={s.link(isActive("/trainer/video-creator"))}>
             <span style={s.icon}>🎬</span> โจทย์วิดีโอ
           </Link>
-          <Link href="/trainer/quiz-creator" style={s.link(isActive("/trainer/quiz-creator"))}>
+          <Link href="/host" style={s.link(isActive("/host"))}>
             <span style={s.icon}>🎮</span> ควิซ PIN
           </Link>
           
