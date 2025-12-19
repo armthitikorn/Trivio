@@ -39,6 +39,7 @@ export default function EnhancedDashboard() {
         <QuickCard href="/trainer/video-creator" icon="📹" title="จัดการโจทย์วิดีโอ" desc="สร้างโจทย์และแชร์ลิงก์ให้ทีม" color="#f1f3f5" />
         <QuickCard href="/admin/review-answers" icon="📊" title="ศูนย์ตรวจประเมิน" desc="ตรวจงานวิดีโอและให้คะแนน" color="#f1f3f5" />
         <QuickCard href="/play/leaderboard" icon="👑" title="ทำเนียบคนเก่ง" desc="ดูอันดับคะแนนยอดเยี่ยม" color="#f1f3f5" />
+        <QuickCard href="/play/audio-game" icon="🎙️" title="โจทน์เสียง" desc="ทำแบบทดสอบเสียง" color="#f1f3f5" />
       </div>
     </div>
   );
