@@ -1,21 +1,24 @@
+'use client'
+
 export default function PlayerLayout({ children }) {
   return (
     <div style={{ 
       minHeight: "100vh", 
-      background: "#f0f2f5", // สีพื้นหลังรอง
-      fontFamily: "'Inter', sans-serif" 
+      background: "#f0f2f5", // สีพื้นหลังเทาอ่อน ดูสบายตา
+      fontFamily: "'Inter', sans-serif",
+      width: "100%", // มั่นใจว่ากว้างเต็มจอ
+      display: "flex",
+      flexDirection: "column"
     }}>
-      {/* เราไม่ใส่ Sidebar ตรงนี้ 
-         เพื่อให้เนื้อหา (children) แสดงเต็มจอ 
-         เหมาะสำหรับการเล่นเกมบนมือถือ 
+      {/* Layout นี้ถูกออกแบบมาให้ "ไม่มี Sidebar" 
+          เพื่อให้พนักงานเห็นแบบทดสอบเต็มหน้าจอโทรศัพท์ 
       */}
       
-      {/* ถ้าอยากได้ Header เล็กๆ ด้านบน สามารถใส่ตรงนี้ได้ */}
-      {/* <header style={{ padding: '10px', textAlign: 'center', background: 'white' }}>TRIVIO PLAYER</header> */}
-
-      <main>
+      <main style={{ flex: 1, width: "100%" }}>
         {children}
       </main>
+
+      {/* คุณสามารถเพิ่ม Footer เล็กๆ ตรงนี้ได้ถ้าต้องการ */}
     </div>
   )
 }
