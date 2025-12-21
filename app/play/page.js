@@ -16,131 +16,102 @@ function JoinPortalContent() {
 
   useEffect(() => {
     const urlPin = searchParams.get('pin')
-    if (urlPin) {
-      setPin(urlPin)
-    }
+    if (urlPin) setPin(urlPin)
   }, [searchParams])
 
-// ไฟล์: app/play/page.js
-
-async function handleJoin() {
-  if (!pin || pin.length < 6) return alert("กรุณากรอก PIN 6 หลักครับ");
-  if (!employeeId || !nickname || !department) return alert("กรุณากรอกข้อมูลให้ครบครับ");
-  
-  setLoading(true);
-
-  try {
-    // 1. ค้นหา Session ID จาก PIN ที่พนักงานกรอก
-    const { data: session, error } = await supabase
-      .from('game_sessions')
-      .select('id, category, is_active') 
-      .eq('pin_code', pin)
-      .single();
-
-    if (error || !session) {
-      alert("❌ ไม่พบรหัส PIN นี้ในระบบครับ");
-      setLoading(false);
-      return;
-    }
-
-    if (!session.is_active) {
-      alert("🔒 ห้องสอบนี้ปิดการใช้งานแล้วครับ");
-      setLoading(false);
-      return;
-    }
-
-    // 2. บันทึกข้อมูลพนักงานลงเครื่อง (เพื่อเอาไปใช้ในหน้าถัดไป)
-    const playerData = { employeeId, nickname, department, level };
-    localStorage.setItem('temp_player_info', JSON.stringify(playerData));
-
-    // 3. ✨ จุดที่ต้องแก้: การนำทาง (Navigation) ✨
-    // เราจะใช้ session.id (ที่เป็น UUID ยาวๆ) ในการเข้าหน้าถัดไป
+  // ✨ ฟังก์ชันจัดการการเข้าห้องสอบ
+  const handleJoin = async (e) => {
+    e.preventDefault(); // ป้องกันหน้าเว็บ Refresh ตัวเอง
     
-    if (session.category === 'AudioArena') {
-      // ✅ พาไปที่: https://trivio-fvlk.vercel.app/play/audio/[ID_จริง_ใน_DB]
-      router.push(`/play/audio/${session.id}`); 
-    } else {
-      // พาไปหน้าทำข้อสอบปกติ
-      router.push(`/play/quiz-practice/${session.id}`);
-    }
+    if (!pin || pin.length < 6) return alert("กรุณากรอก PIN 6 หลัก")
+    if (!employeeId || !nickname) return alert("กรุณากรอกข้อมูลพนักงานให้ครบ")
+    
+    setLoading(true)
+    console.log("กำลังตรวจสอบ PIN:", pin)
 
-  } catch (err) {
-    console.error("Join Error:", err);
-    alert("เกิดข้อผิดพลาดในการเชื่อมต่อระบบ");
-    setLoading(false);
+    try {
+      // 1. ดึงข้อมูลจาก Supabase (เช็คทั้ง ID และ Category)
+      const { data: session, error } = await supabase
+        .from('game_sessions')
+        .select('id, category, is_active') 
+        .eq('pin_code', pin)
+        .single()
+
+      if (error || !session) {
+        console.error("Supabase Error:", error)
+        alert("❌ ไม่พบ PIN นี้ หรือรหัสผิด (โปรดตรวจสอบในตาราง game_sessions)")
+        setLoading(false)
+        return
+      }
+
+      console.log("พบห้องสอบ:", session)
+
+      // 2. บันทึกข้อมูลลง LocalStorage
+      const playerData = { employeeId, nickname, department, level }
+      localStorage.setItem('temp_player_info', JSON.stringify(playerData))
+
+      // 3. ✨ ระบบนำทาง (Redirect Logic) ✨
+      // ตรวจสอบว่า Category ตรงกับที่เทรนเนอร์สร้างไหม
+      if (session.category === 'AudioArena') {
+        console.log("ไปที่หน้าโจทย์เสียง...");
+        router.push(`/play/audio/${session.id}`);
+      } else {
+        console.log("ไปที่หน้าควิซปกติ...");
+        router.push(`/play/quiz-practice/${session.id}`);
+      }
+
+    } catch (err) {
+      console.error("Catch Error:", err)
+      setLoading(false)
+    }
   }
-}
 
   return (
     <div style={s.container}>
       <div style={s.card}>
         <div style={s.logoBox}>🎮 TRIVIO PLAY</div>
-        
-        {/* หัวข้อ: ปรับให้หนาและเข้มขึ้น */}
         <h1 style={s.title}>ลงทะเบียนเข้าสอบ</h1>
         
-        <div style={s.formGrid}>
-          <p style={s.labelTag}>ระบุรหัสห้องสอบ (PIN)</p>
+        <form onSubmit={handleJoin} style={s.formGrid}>
+          <p style={s.labelTag}>รหัส PIN (6 หลัก)</p>
           <input 
             type="text" 
-            placeholder="รหัส PIN 6 หลัก"
+            placeholder="000000"
             maxLength={6}
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
             style={s.inputPin}
           />
 
-          <hr style={{ width: '100%', border: '1px solid #eee', margin: '15px 0' }} />
+          <hr style={{ border: '1px solid #eee', margin: '10px 0' }} />
 
-          <p style={s.labelTag}>ข้อมูลพนักงาน</p>
+          <p style={s.labelTag}>รหัสพนักงาน / ชื่อเล่น</p>
           <input 
-            type="text" 
-            placeholder="รหัสพนักงาน (เช่น EMP001)"
-            value={employeeId}
-            onChange={(e) => setEmployeeId(e.target.value)}
-            style={s.inputSmall}
+            type="text" placeholder="รหัสพนักงาน" value={employeeId}
+            onChange={(e) => setEmployeeId(e.target.value)} style={s.inputSmall}
+          />
+          <input 
+            type="text" placeholder="ชื่อเล่น" value={nickname}
+            onChange={(e) => setNickname(e.target.value)} style={s.inputSmall}
           />
 
-          <input 
-            type="text" 
-            placeholder="ชื่อ-นามสกุล (หรือชื่อเล่น)"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            style={s.inputSmall}
-          />
-
-          <select 
-            value={department} 
-            onChange={(e) => setDepartment(e.target.value)} 
-            style={s.select}
-          >
+          <p style={s.labelTag}>แผนก / ระดับ</p>
+          <select value={department} onChange={(e) => setDepartment(e.target.value)} style={s.select}>
             <option value="">เลือกแผนก</option>
-            <option value="DMTM">ฝ่ายขายTele (Sales)</option>
-            <option value="Agent">ตัวแทน (sales)</option>
-            <option value="ฺBroker">นายหน้า (Sales)</option>
-            <option value="Bancassurance">ฝ่ายขายหน้าเคาท์เตอร์ธนาคาร (sales)</option>
-            <option value="Spervisor">หัวหน้าฝ่ายขาย (TL)</option>
+            <option value="DMTM">ฝ่ายขาย Tele</option>
+            <option value="Agent">ตัวแทน</option>
           </select>
 
-          <select 
-            value={level} 
-            onChange={(e) => setLevel(e.target.value)} 
-            style={s.select}
-          >
-            <option value="">เลือกระดับ (Level)</option>
-            <option value="OB.TSRs">OB.TSRs</option>
+          <select value={level} onChange={(e) => setLevel(e.target.value)} style={s.select}>
+            <option value="">เลือกระดับ</option>
             <option value="Nursery">Nursery</option>
-            <option value="TSRs Exsiting">TSRs Exsiting</option>
+            <option value="Rising Star">Rising Star</option>
           </select>
-        </div>
 
-        <button 
-          onClick={handleJoin} 
-          disabled={loading}
-          style={s.btnPrimary}
-        >
-          {loading ? 'กำลังเข้าระบบ...' : '🚀 เริ่มทำแบบทดสอบ'}
-        </button>
+          <button type="submit" disabled={loading} style={s.btnPrimary}>
+            {loading ? 'กำลังเข้าระบบ...' : '🚀 เริ่มทำแบบทดสอบ'}
+          </button>
+        </form>
       </div>
     </div>
   )
@@ -155,103 +126,14 @@ export default function PlayerJoinPortal() {
 }
 
 const s = {
-  container: {
-    minHeight: '100vh',
-    background: '#f0f2f5', // เปลี่ยนจาก gradient เป็นสีพื้นที่สว่างแต่ไม่ขาวจ้าเกินไป
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    fontFamily: "'Inter', sans-serif",
-    padding: '20px'
-  },
-  card: {
-    background: 'white',
-    padding: '40px 30px',
-    borderRadius: '35px',
-    boxShadow: '0 20px 50px rgba(0,0,0,0.15)',
-    textAlign: 'center',
-    width: '100%',
-    maxWidth: '450px',
-    border: '1px solid #ddd'
-  },
-  logoBox: {
-    background: '#2d3436',
-    color: 'white',
-    padding: '8px 20px',
-    borderRadius: '50px',
-    display: 'inline-block',
-    fontWeight: '900',
-    fontSize: '0.9rem',
-    marginBottom: '10px'
-  },
-  title: {
-    color: '#000000', // ดำสนิท
-    margin: '10px 0 25px 0',
-    fontSize: '1.8rem',
-    fontWeight: '800' // หนามาก
-  },
-  labelTag: {
-    textAlign: 'left',
-    fontSize: '0.9rem',
-    fontWeight: '700',
-    color: '#6f42c1', // สีม่วงเข้มให้สะดุดตา
-    marginBottom: '5px',
-    marginLeft: '5px'
-  },
-  formGrid: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '15px',
-    marginBottom: '30px'
-  },
-  inputPin: {
-    width: '100%',
-    padding: '18px',
-    fontSize: '2rem',
-    textAlign: 'center',
-    letterSpacing: '8px',
-    borderRadius: '20px',
-    border: '3px solid #6f42c1', // ขอบหนาขึ้น
-    outline: 'none',
-    background: '#f8f9ff',
-    color: '#000000', // ตัวเลขที่พิมพ์เป็นสีดำสนิท
-    fontWeight: '900',
-    boxSizing: 'border-box'
-  },
-  inputSmall: {
-    width: '100%',
-    padding: '16px',
-    fontSize: '1.1rem',
-    borderRadius: '15px',
-    border: '2px solid #ddd',
-    outline: 'none',
-    boxSizing: 'border-box',
-    color: '#000000', // ตัวหนังสือดำสนิท
-    fontWeight: '600' // ตัวหนาปานกลาง
-  },
-  select: {
-    width: '100%',
-    padding: '16px',
-    fontSize: '1.1rem',
-    borderRadius: '15px',
-    border: '2px solid #ddd',
-    background: 'white',
-    cursor: 'pointer',
-    boxSizing: 'border-box',
-    color: '#000000', // ตัวหนังสือดำสนิท
-    fontWeight: '600'
-  },
-  btnPrimary: {
-    width: '100%',
-    padding: '20px',
-    background: '#1a1a1a', // สีดำเข้ม
-    color: 'white',
-    border: 'none',
-    borderRadius: '20px',
-    fontSize: '1.2rem',
-    fontWeight: '800', // หนามาก
-    cursor: 'pointer',
-    boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
-    transition: '0.2s'
-  }
+  container: { minHeight: '100vh', background: '#f0f2f5', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' },
+  card: { background: 'white', padding: '40px 30px', borderRadius: '35px', boxShadow: '0 20px 50px rgba(0,0,0,0.15)', textAlign: 'center', width: '100%', maxWidth: '450px', border: '2px solid #ddd' },
+  logoBox: { background: '#2d3436', color: 'white', padding: '8px 20px', borderRadius: '50px', display: 'inline-block', fontWeight: '900', fontSize: '0.9rem', marginBottom: '10px' },
+  title: { color: '#000000', margin: '10px 0 25px 0', fontSize: '2rem', fontWeight: '900' },
+  labelTag: { textAlign: 'left', fontSize: '1rem', fontWeight: '900', color: '#1a1a1a', marginBottom: '5px', marginLeft: '5px' },
+  formGrid: { display: 'flex', flexDirection: 'column', gap: '15px' },
+  inputPin: { width: '100%', padding: '18px', fontSize: '2.5rem', textAlign: 'center', letterSpacing: '8px', borderRadius: '20px', border: '3px solid #6f42c1', background: '#f8f9ff', color: '#000', fontWeight: '900', boxSizing: 'border-box' },
+  inputSmall: { width: '100%', padding: '16px', fontSize: '1.2rem', borderRadius: '15px', border: '2px solid #1a1a1a', color: '#000', fontWeight: '800', boxSizing: 'border-box' },
+  select: { width: '100%', padding: '16px', fontSize: '1.2rem', borderRadius: '15px', border: '2px solid #1a1a1a', background: 'white', color: '#000', fontWeight: '800' },
+  btnPrimary: { width: '100%', padding: '22px', background: '#000', color: '#fff', border: 'none', borderRadius: '20px', fontSize: '1.4rem', fontWeight: '900', cursor: 'pointer', marginTop: '10px' }
 }
