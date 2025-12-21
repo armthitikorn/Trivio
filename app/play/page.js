@@ -101,11 +101,11 @@ function JoinPortalContent() {
             style={s.select}
           >
             <option value="">เลือกแผนก</option>
-            <option value="Sales">ฝ่ายขาย (Sales)</option>
-            <option value="Marketing">การตลาด (Marketing)</option>
-            <option value="IT">ไอที (IT)</option>
-            <option value="HR">บุคคล (HR)</option>
-            <option value="Operations">ปฏิบัติการ (Operations)</option>
+            <option value="DMTM">ฝ่ายขายTele (Sales)</option>
+            <option value="Agent">ตัวแทน (sales)</option>
+            <option value="ฺBroker">นายหน้า (Sales)</option>
+            <option value="Bancassurance">ฝ่ายขายหน้าเคาท์เตอร์ธนาคาร (sales)</option>
+            <option value="Spervisor">หัวหน้าฝ่ายขาย (TL)</option>
           </select>
 
           <select 
@@ -114,9 +114,9 @@ function JoinPortalContent() {
             style={s.select}
           >
             <option value="">เลือกระดับ (Level)</option>
-            <option value="Staff">Staff</option>
-            <option value="Supervisor">Supervisor</option>
-            <option value="Manager">Manager</option>
+            <option value="OB.TSRs">OB.TSRs</option>
+            <option value="Nursery">Nursery</option>
+            <option value="TSRs Exsiting">TSRs Exsiting</option>
           </select>
         </div>
 
