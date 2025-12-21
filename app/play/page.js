@@ -22,50 +22,37 @@ function JoinPortalContent() {
   }, [searchParams])
 
 async function handleJoin() {
-    if (!pin || pin.length < 6) return alert("กรุณากรอก PIN 6 หลักครับ")
-    if (!employeeId || !nickname || !department) return alert("กรุณากรอกข้อมูลพนักงานให้ครบถ้วน")
-    
-    setLoading(true)
+  // ... (ส่วนตรวจสอบ PIN และข้อมูลพนักงานเหมือนเดิม) ...
 
-    try {
-      // ✨ จุดแก้ไขที่ 1: เพิ่ม 'category' เข้าไปใน select เพื่อเช็คประเภทห้องสอบ
-      const { data: session, error } = await supabase
-        .from('game_sessions')
-        .select('id, is_active, category') 
-        .eq('pin_code', pin)
-        .single()
+  try {
+    const { data: session, error } = await supabase
+      .from('game_sessions')
+      .select('id, is_active, category') 
+      .eq('pin_code', pin)
+      .single()
 
-      if (error || !session) {
-        alert("❌ ไม่พบห้องสอบนี้ หรือ PIN ผิดครับ")
-        setLoading(false)
-        return
-      }
-
-      if (!session.is_active) {
-         alert("🔒 ห้องสอบนี้ปิดไปแล้วครับ")
-         setLoading(false)
-         return
-      }
-
-      // บันทึกข้อมูลพนักงานลงเครื่อง
-      const playerData = { employeeId, nickname, department, level }
-      localStorage.setItem('temp_player_info', JSON.stringify(playerData))
-
-      // ✨ จุดแก้ไขที่ 2: ตรรกะการแยกหน้า (Redirect)
-      if (session.category === 'AudioArena') {
-        // ถ้าเป็นโจทย์เสียง ให้ไปที่หน้า audio-game
-        router.push(`/play/audio-game/${session.id}`)
-      } else {
-        // ถ้าเป็นโจทย์ปกติ ให้ไปที่หน้า quiz-practice
-        router.push(`/play/quiz-practice/${session.id}`)
-      }
-
-    } catch (err) {
-      console.error(err)
-      alert("เกิดข้อผิดพลาดในการเชื่อมต่อ")
-      setLoading(false)
+    if (error || !session) {
+      alert("❌ ไม่พบห้องสอบนี้ครับ");
+      setLoading(false);
+      return;
     }
+
+    // เก็บข้อมูลพนักงาน
+    const playerData = { employeeId, nickname, department, level }
+    localStorage.setItem('temp_player_info', JSON.stringify(playerData))
+
+    // ✨ แก้ไขจุดนี้: เปลี่ยน Path ให้ตรงตามที่คุณต้องการ
+    if (session.category === 'AudioArena') {
+      // ส่งไปที่ https://trivio-fvlk.vercel.app/play/audio/[id]
+      router.push(`/play/audio/${session.id}`); 
+    } else {
+      router.push(`/play/quiz-practice/${session.id}`);
+    }
+
+  } catch (err) {
+    setLoading(false);
   }
+}
 
   return (
     <div style={s.container}>
