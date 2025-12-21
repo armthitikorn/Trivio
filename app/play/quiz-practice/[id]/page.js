@@ -61,28 +61,23 @@ export default function SoloQuizGame() {
     setLoading(false)
   }
 
-  // ✨ ฟังก์ชันที่เพิ่มเข้าไป: จัดการการตอบคำถามและเลื่อนข้อ
   async function handleAnswer(selectedLabel) {
-    if (answered) return; // ป้องกันการกดซ้ำ
+    if (answered) return;
     setAnswered(true);
 
     const currentQ = questions[currentIndex];
     let newScore = score;
 
-    // ตรวจสอบว่าคำตอบถูกไหม (สมมติว่าฟิลด์ใน DB ชื่อ correct_answer)
     if (selectedLabel === currentQ.correct_answer) {
       newScore = score + 1;
       setScore(newScore);
     }
 
-    // รอสักครู่ให้พนักงานเห็นว่ากดติดแล้ว (0.5 วินาที)
     setTimeout(async () => {
       if (currentIndex + 1 < questions.length) {
-        // ไปข้อถัดไป
         setCurrentIndex(currentIndex + 1);
         setAnswered(false);
       } else {
-        // จบเกม
         await saveFinalScore(newScore);
       }
     }, 500);
@@ -90,7 +85,6 @@ export default function SoloQuizGame() {
 
   async function saveFinalScore(finalScore) {
     const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
-    
     await supabase
       .from('players')
       .update({ score: finalScore })
@@ -101,11 +95,12 @@ export default function SoloQuizGame() {
     setIsFinished(true)
   }
 
+  // --- จอเข้าเกม ---
   if (!gameStarted) {
     return (
       <div style={s.container}>
         <div style={s.card}>
-            <h1>📝 แบบทดสอบพนักงาน</h1>
+            <h1 style={{color: '#1a1a1a', marginBottom: '20px'}}>📝 แบบทดสอบพนักงาน</h1>
             <input style={s.input} placeholder="ระบุชื่อเล่นของคุณ" value={nickname} onChange={e => setNickname(e.target.value)} />
             <button onClick={startGame} disabled={loading} style={s.btnPrimary}>
                 {loading ? 'กำลังเข้าสู่ระบบ...' : 'เริ่มทำข้อสอบ'}
@@ -115,15 +110,16 @@ export default function SoloQuizGame() {
     )
   }
 
+  // --- จอจบเกม ---
   if (isFinished) {
     return (
       <div style={s.container}>
         <div style={s.card}>
           <h1 style={{fontSize:'3rem'}}>🎉</h1>
-          <h2>เก่งมาก! ทำเสร็จแล้ว</h2>
+          <h2 style={{color: '#1a1a1a'}}>เก่งมาก! ทำเสร็จแล้ว</h2>
           <div style={s.scoreBox}>
-            <p>คะแนนที่ได้</p>
-            <h1 style={{fontSize:'4rem', color:'#6f42c1'}}>{score} / {questions.length}</h1>
+            <p style={{fontWeight: 'bold'}}>คะแนนที่ได้</p>
+            <h1 style={{fontSize:'4rem', color:'#6f42c1', margin: '10px 0'}}>{score} / {questions.length}</h1>
           </div>
           <button onClick={() => router.push('/play')} style={s.btnBack}>กลับหน้าแรก</button>
         </div>
@@ -144,11 +140,15 @@ export default function SoloQuizGame() {
   return (
     <div style={s.container}>
       <div style={s.questionCard}>
+        {/* Progress Bar */}
         <div style={s.progressBarBg}>
           <div style={{ ...s.progressBarFill, width: `${((currentIndex + 1) / questions.length) * 100}%` }}></div>
         </div>
-        <h2 style={{ color: '#333', marginBottom: '30px' }}>{currentQ.question_text}</h2>
+
+        {/* โจทย์คำถาม (ใช้สไตล์ questionText ที่ปรับใหม่) */}
+        <h2 style={s.questionText}>{currentQ.question_text}</h2>
         
+        {/* ตัวเลือกตอบ */}
         <div style={s.gridChoices}>
           {choices.map((c) => (
             <button 
@@ -157,7 +157,8 @@ export default function SoloQuizGame() {
               onClick={() => handleAnswer(c.label)} 
               style={{...s.choiceBtn(getBtnColor(c.label)), opacity: answered ? 0.6 : 1}}
             >
-              <b style={{marginRight: '8px'}}>{c.label}.</b> {c.text}
+              <span style={s.label}>{c.label}</span>
+              <span style={{flex: 1}}>{c.text}</span>
             </button>
           ))}
         </div>
@@ -166,29 +167,124 @@ export default function SoloQuizGame() {
   )
 }
 
+// --- Styles (เน้นความคมชัดสูง) ---
 const s = {
-  container: { minHeight: '100vh', background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', fontFamily: 'sans-serif' },
-  card: { background: 'white', padding: '40px', borderRadius: '25px', textAlign: 'center', width: '100%', maxWidth: '400px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' },
-  questionCard: { background: 'white', padding: '30px', borderRadius: '25px', width: '100%', maxWidth: '600px', textAlign: 'center', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', position: 'relative', zIndex: 10 },
-  input: { width: '100%', padding: '15px', borderRadius: '10px', border: '1px solid #ddd', marginBottom: '20px', boxSizing: 'border-box' },
-  btnPrimary: { width: '100%', padding: '15px', background: '#2d3436', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' },
-  btnBack: { width: '100%', padding: '15px', background: '#f1f2f6', border: 'none', borderRadius: '10px', cursor: 'pointer' },
-  scoreBox: { background: '#f8f9fa', padding: '20px', borderRadius: '15px', margin: '20px 0' },
-  progressBarBg: { width: '100%', height: '10px', background: '#eee', borderRadius: '5px', marginBottom: '20px', overflow: 'hidden' },
-  progressBarFill: { height: '100%', background: '#6f42c1', transition: 'width 0.3s ease' },
-  gridChoices: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '20px' },
-  choiceBtn: (color) => ({ 
-    padding: '20px', 
+  container: { 
+    minHeight: '100vh', 
+    background: '#f0f2f5', // พื้นหลังเรียบช่วยให้ตัวหนังสือเด่น
+    display: 'flex', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    padding: '20px',
+    fontFamily: "'Inter', sans-serif" 
+  },
+  card: { 
+    background: 'white', 
+    padding: '40px', 
+    borderRadius: '25px', 
+    textAlign: 'center', 
+    width: '100%', 
+    maxWidth: '400px', 
+    boxShadow: '0 10px 30px rgba(0,0,0,0.1)' 
+  },
+  questionCard: { 
+    background: 'white', 
+    padding: '40px 30px', 
+    borderRadius: '30px', 
+    width: '100%', 
+    maxWidth: '600px', 
+    textAlign: 'center', 
+    boxShadow: '0 15px 35px rgba(0,0,0,0.1)',
+    border: '1px solid #eee',
+    position: 'relative', 
+    zIndex: 10 
+  },
+  questionText: { 
+    color: '#1a1a1a', // ดำเข้มชัดเจน
+    fontSize: '1.8rem', 
+    fontWeight: '800', // หนาพิเศษ
+    marginBottom: '35px',
+    lineHeight: '1.4'
+  },
+  input: { 
+    width: '100%', 
+    padding: '15px', 
+    borderRadius: '10px', 
+    border: '1px solid #ddd', 
+    marginBottom: '20px', 
+    boxSizing: 'border-box',
+    fontSize: '1rem' 
+  },
+  btnPrimary: { 
+    width: '100%', 
+    padding: '15px', 
+    background: '#2d3436', 
+    color: 'white', 
     border: 'none', 
-    borderRadius: '15px', 
-    background: color, 
-    color: '#333', 
-    fontWeight: 'bold', 
+    borderRadius: '10px', 
+    cursor: 'pointer', 
+    fontWeight: 'bold',
+    fontSize: '1.1rem' 
+  },
+  btnBack: { 
+    width: '100%', 
+    padding: '15px', 
+    background: '#f1f2f6', 
+    border: 'none', 
+    borderRadius: '10px', 
     cursor: 'pointer',
-    fontSize: '1rem',
+    color: '#1a1a1a',
+    fontWeight: 'bold' 
+  },
+  scoreBox: { 
+    background: '#f8f9fa', 
+    padding: '20px', 
+    borderRadius: '15px', 
+    margin: '20px 0',
+    border: '1px solid #eee' 
+  },
+  progressBarBg: { 
+    width: '100%', 
+    height: '12px', 
+    background: '#e0e0e0', 
+    borderRadius: '10px', 
+    marginBottom: '30px', 
+    overflow: 'hidden' 
+  },
+  progressBarFill: { 
+    height: '100%', 
+    background: '#6f42c1', 
+    transition: 'width 0.3s ease' 
+  },
+  gridChoices: { 
+    display: 'grid', 
+    gridTemplateColumns: '1fr 1fr', 
+    gap: '15px', 
+    marginTop: '20px' 
+  },
+  choiceBtn: (color) => ({ 
+    padding: '22px', 
+    border: '2px solid rgba(0,0,0,0.05)', 
+    borderRadius: '20px', 
+    background: color, 
+    color: '#000000', // ตัวหนังสือบนปุ่มเป็นสีดำสนิท
+    fontWeight: '800', 
+    fontSize: '1.1rem',
+    cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    textAlign: 'left',
+    boxShadow: '0 4px 0 rgba(0,0,0,0.1)',
     transition: 'transform 0.1s'
-  })
+  }),
+  label: {
+    background: 'rgba(0,0,0,0.15)',
+    padding: '5px 12px',
+    borderRadius: '10px',
+    marginRight: '15px',
+    fontSize: '1.3rem',
+    color: '#000',
+    fontWeight: '800'
+  }
 }
