@@ -1,29 +1,33 @@
 'use client'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
-export default function PlayerJoinPortal() {
+function JoinPortalContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   
-  // --- States สำหรับข้อมูลพนักงาน ---
   const [pin, setPin] = useState('')
   const [employeeId, setEmployeeId] = useState('')
   const [nickname, setNickname] = useState('')
   const [department, setDepartment] = useState('')
   const [level, setLevel] = useState('')
-  
   const [loading, setLoading] = useState(false)
 
+  useEffect(() => {
+    const urlPin = searchParams.get('pin')
+    if (urlPin) {
+      setPin(urlPin)
+    }
+  }, [searchParams])
+
   async function handleJoin() {
-    // 1. ตรวจสอบข้อมูลให้ครบ
     if (!pin || pin.length < 6) return alert("กรุณากรอก PIN 6 หลักครับ")
     if (!employeeId || !nickname || !department) return alert("กรุณากรอกข้อมูลพนักงานให้ครบถ้วน")
     
     setLoading(true)
 
     try {
-      // 2. ค้นหา Session จาก PIN
       const { data: session, error } = await supabase
         .from('game_sessions')
         .select('id, is_active')
@@ -42,17 +46,8 @@ export default function PlayerJoinPortal() {
          return
       }
 
-      // 3. ✨ บันทึกข้อมูลพนักงานลง Temporary Storage (localStorage)
-      // เพื่อให้หน้า Quiz ดึงไปใช้บันทึกลงตาราง players ตอนทำเสร็จ
-      const playerData = {
-        employeeId,
-        nickname,
-        department,
-        level
-      }
+      const playerData = { employeeId, nickname, department, level }
       localStorage.setItem('temp_player_info', JSON.stringify(playerData))
-
-      // 4. ส่งไปหน้าทำข้อสอบ
       router.push(`/play/quiz-practice/${session.id}`)
 
     } catch (err) {
@@ -67,10 +62,11 @@ export default function PlayerJoinPortal() {
       <div style={s.card}>
         <div style={s.logoBox}>🎮 TRIVIO PLAY</div>
         
-        <h1 style={{ color: '#2d3436', margin: '15px 0', fontSize:'1.5rem' }}>ลงทะเบียนเข้าสอบ</h1>
+        {/* หัวข้อ: ปรับให้หนาและเข้มขึ้น */}
+        <h1 style={s.title}>ลงทะเบียนเข้าสอบ</h1>
         
         <div style={s.formGrid}>
-          {/* PIN Input - เด่นที่สุด */}
+          <p style={s.labelTag}>ระบุรหัสห้องสอบ (PIN)</p>
           <input 
             type="text" 
             placeholder="รหัส PIN 6 หลัก"
@@ -80,11 +76,12 @@ export default function PlayerJoinPortal() {
             style={s.inputPin}
           />
 
-          <hr style={{ width: '100%', border: '0.5px solid #eee', margin: '10px 0' }} />
+          <hr style={{ width: '100%', border: '1px solid #eee', margin: '15px 0' }} />
 
+          <p style={s.labelTag}>ข้อมูลพนักงาน</p>
           <input 
             type="text" 
-            placeholder="รหัสพนักงาน"
+            placeholder="รหัสพนักงาน (เช่น EMP001)"
             value={employeeId}
             onChange={(e) => setEmployeeId(e.target.value)}
             style={s.inputSmall}
@@ -128,18 +125,25 @@ export default function PlayerJoinPortal() {
           disabled={loading}
           style={s.btnPrimary}
         >
-          {loading ? 'กำลังเข้าสู่ห้องสอบ...' : '🚀 เริ่มทำแบบทดสอบ'}
+          {loading ? 'กำลังเข้าระบบ...' : '🚀 เริ่มทำแบบทดสอบ'}
         </button>
-
       </div>
     </div>
+  )
+}
+
+export default function PlayerJoinPortal() {
+  return (
+    <Suspense fallback={<div>กำลังโหลด...</div>}>
+      <JoinPortalContent />
+    </Suspense>
   )
 }
 
 const s = {
   container: {
     minHeight: '100vh',
-    background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
+    background: '#f0f2f5', // เปลี่ยนจาก gradient เป็นสีพื้นที่สว่างแต่ไม่ขาวจ้าเกินไป
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
@@ -148,71 +152,92 @@ const s = {
   },
   card: {
     background: 'white',
-    padding: '30px',
-    borderRadius: '30px',
-    boxShadow: '0 20px 50px rgba(0,0,0,0.1)',
+    padding: '40px 30px',
+    borderRadius: '35px',
+    boxShadow: '0 20px 50px rgba(0,0,0,0.15)',
     textAlign: 'center',
     width: '100%',
-    maxWidth: '400px',
+    maxWidth: '450px',
+    border: '1px solid #ddd'
   },
   logoBox: {
     background: '#2d3436',
     color: 'white',
-    padding: '6px 15px',
+    padding: '8px 20px',
     borderRadius: '50px',
     display: 'inline-block',
-    fontWeight: 'bold',
-    fontSize: '0.8rem',
+    fontWeight: '900',
+    fontSize: '0.9rem',
+    marginBottom: '10px'
+  },
+  title: {
+    color: '#000000', // ดำสนิท
+    margin: '10px 0 25px 0',
+    fontSize: '1.8rem',
+    fontWeight: '800' // หนามาก
+  },
+  labelTag: {
+    textAlign: 'left',
+    fontSize: '0.9rem',
+    fontWeight: '700',
+    color: '#6f42c1', // สีม่วงเข้มให้สะดุดตา
+    marginBottom: '5px',
+    marginLeft: '5px'
   },
   formGrid: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px',
-    marginBottom: '25px'
+    gap: '15px',
+    marginBottom: '30px'
   },
   inputPin: {
     width: '100%',
-    padding: '15px',
-    fontSize: '1.8rem',
+    padding: '18px',
+    fontSize: '2rem',
     textAlign: 'center',
-    letterSpacing: '5px',
-    borderRadius: '15px',
-    border: '2px solid #6f42c1',
+    letterSpacing: '8px',
+    borderRadius: '20px',
+    border: '3px solid #6f42c1', // ขอบหนาขึ้น
     outline: 'none',
     background: '#f8f9ff',
-    color: '#6f42c1',
-    fontWeight: 'bold',
+    color: '#000000', // ตัวเลขที่พิมพ์เป็นสีดำสนิท
+    fontWeight: '900',
     boxSizing: 'border-box'
   },
   inputSmall: {
     width: '100%',
-    padding: '12px',
-    fontSize: '1rem',
-    borderRadius: '10px',
-    border: '1px solid #ddd',
+    padding: '16px',
+    fontSize: '1.1rem',
+    borderRadius: '15px',
+    border: '2px solid #ddd',
     outline: 'none',
-    boxSizing: 'border-box'
+    boxSizing: 'border-box',
+    color: '#000000', // ตัวหนังสือดำสนิท
+    fontWeight: '600' // ตัวหนาปานกลาง
   },
   select: {
     width: '100%',
-    padding: '12px',
-    fontSize: '1rem',
-    borderRadius: '10px',
-    border: '1px solid #ddd',
+    padding: '16px',
+    fontSize: '1.1rem',
+    borderRadius: '15px',
+    border: '2px solid #ddd',
     background: 'white',
     cursor: 'pointer',
-    boxSizing: 'border-box'
+    boxSizing: 'border-box',
+    color: '#000000', // ตัวหนังสือดำสนิท
+    fontWeight: '600'
   },
   btnPrimary: {
     width: '100%',
-    padding: '16px',
-    background: 'linear-gradient(45deg, #6f42c1, #8e44ad)',
+    padding: '20px',
+    background: '#1a1a1a', // สีดำเข้ม
     color: 'white',
     border: 'none',
-    borderRadius: '15px',
-    fontSize: '1.1rem',
-    fontWeight: 'bold',
+    borderRadius: '20px',
+    fontSize: '1.2rem',
+    fontWeight: '800', // หนามาก
     cursor: 'pointer',
-    boxShadow: '0 8px 20px rgba(111, 66, 193, 0.3)',
+    boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+    transition: '0.2s'
   }
 }
