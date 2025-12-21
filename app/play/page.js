@@ -21,16 +21,17 @@ function JoinPortalContent() {
     }
   }, [searchParams])
 
-  async function handleJoin() {
+async function handleJoin() {
     if (!pin || pin.length < 6) return alert("กรุณากรอก PIN 6 หลักครับ")
     if (!employeeId || !nickname || !department) return alert("กรุณากรอกข้อมูลพนักงานให้ครบถ้วน")
     
     setLoading(true)
 
     try {
+      // ✨ จุดแก้ไขที่ 1: เพิ่ม 'category' เข้าไปใน select เพื่อเช็คประเภทห้องสอบ
       const { data: session, error } = await supabase
         .from('game_sessions')
-        .select('id, is_active')
+        .select('id, is_active, category') 
         .eq('pin_code', pin)
         .single()
 
@@ -46,9 +47,18 @@ function JoinPortalContent() {
          return
       }
 
+      // บันทึกข้อมูลพนักงานลงเครื่อง
       const playerData = { employeeId, nickname, department, level }
       localStorage.setItem('temp_player_info', JSON.stringify(playerData))
-      router.push(`/play/quiz-practice/${session.id}`)
+
+      // ✨ จุดแก้ไขที่ 2: ตรรกะการแยกหน้า (Redirect)
+      if (session.category === 'AudioArena') {
+        // ถ้าเป็นโจทย์เสียง ให้ไปที่หน้า audio-game
+        router.push(`/play/audio-game/${session.id}`)
+      } else {
+        // ถ้าเป็นโจทย์ปกติ ให้ไปที่หน้า quiz-practice
+        router.push(`/play/quiz-practice/${session.id}`)
+      }
 
     } catch (err) {
       console.error(err)
