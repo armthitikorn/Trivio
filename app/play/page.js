@@ -21,35 +21,52 @@ function JoinPortalContent() {
     }
   }, [searchParams])
 
+// ไฟล์: app/play/page.js
+
 async function handleJoin() {
-  // ... (ส่วนตรวจสอบ PIN และข้อมูลพนักงานเหมือนเดิม) ...
+  if (!pin || pin.length < 6) return alert("กรุณากรอก PIN 6 หลักครับ");
+  if (!employeeId || !nickname || !department) return alert("กรุณากรอกข้อมูลให้ครบครับ");
+  
+  setLoading(true);
 
   try {
+    // 1. ค้นหา Session ID จาก PIN ที่พนักงานกรอก
     const { data: session, error } = await supabase
       .from('game_sessions')
-      .select('id, is_active, category') 
+      .select('id, category, is_active') 
       .eq('pin_code', pin)
-      .single()
+      .single();
 
     if (error || !session) {
-      alert("❌ ไม่พบห้องสอบนี้ครับ");
+      alert("❌ ไม่พบรหัส PIN นี้ในระบบครับ");
       setLoading(false);
       return;
     }
 
-    // เก็บข้อมูลพนักงาน
-    const playerData = { employeeId, nickname, department, level }
-    localStorage.setItem('temp_player_info', JSON.stringify(playerData))
+    if (!session.is_active) {
+      alert("🔒 ห้องสอบนี้ปิดการใช้งานแล้วครับ");
+      setLoading(false);
+      return;
+    }
 
-    // ✨ แก้ไขจุดนี้: เปลี่ยน Path ให้ตรงตามที่คุณต้องการ
+    // 2. บันทึกข้อมูลพนักงานลงเครื่อง (เพื่อเอาไปใช้ในหน้าถัดไป)
+    const playerData = { employeeId, nickname, department, level };
+    localStorage.setItem('temp_player_info', JSON.stringify(playerData));
+
+    // 3. ✨ จุดที่ต้องแก้: การนำทาง (Navigation) ✨
+    // เราจะใช้ session.id (ที่เป็น UUID ยาวๆ) ในการเข้าหน้าถัดไป
+    
     if (session.category === 'AudioArena') {
-      // ส่งไปที่ https://trivio-fvlk.vercel.app/play/audio/[id]
+      // ✅ พาไปที่: https://trivio-fvlk.vercel.app/play/audio/[ID_จริง_ใน_DB]
       router.push(`/play/audio/${session.id}`); 
     } else {
+      // พาไปหน้าทำข้อสอบปกติ
       router.push(`/play/quiz-practice/${session.id}`);
     }
 
   } catch (err) {
+    console.error("Join Error:", err);
+    alert("เกิดข้อผิดพลาดในการเชื่อมต่อระบบ");
     setLoading(false);
   }
 }
