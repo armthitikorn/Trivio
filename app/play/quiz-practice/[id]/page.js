@@ -21,7 +21,6 @@ export default function SoloQuizGame() {
   }, [id])
 
   async function fetchQuestions() {
-    // 1. ดึง quiz_id จาก session
     const { data: session } = await supabase
       .from('game_sessions')
       .select('quiz_id')
@@ -29,7 +28,6 @@ export default function SoloQuizGame() {
       .single()
 
     if (session) {
-      // 2. ดึงคำถามที่เทรนเนอร์สร้างไว้ (ดึงมาทั้ง Object รวมถึงฟิลด์ options ที่เป็น JSON)
       const { data: qs } = await supabase
         .from('questions')
         .select('*')
@@ -40,46 +38,68 @@ export default function SoloQuizGame() {
     }
   }
 
-// แก้ไขฟังก์ชันเริ่มเกม
-async function startGame() {
-  setLoading(true)
-  
-  // ดึงข้อมูลที่พนักงานกรอกไว้จากหน้า Login
-  const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
-  
-  // บันทึกข้อมูลเริ่มต้นลงตาราง players
-  const { error } = await supabase.from('players').insert([{ 
-    session_id: id, 
-    nickname: savedInfo.nickname || 'Unknown', 
-    employee_id: savedInfo.employeeId,
-    department: savedInfo.department,
-    level: savedInfo.level,
-    score: 0 
-  }])
-  
-  if (error) {
-    console.error("Error saving player:", error)
-    alert("เกิดข้อผิดพลาดในการลงทะเบียน")
-  } else {
-    setNickname(savedInfo.nickname)
-    setGameStarted(true)
+  async function startGame() {
+    setLoading(true)
+    const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
+    
+    const { error } = await supabase.from('players').insert([{ 
+      session_id: id, 
+      nickname: savedInfo.nickname || 'Unknown', 
+      employee_id: savedInfo.employeeId,
+      department: savedInfo.department,
+      level: savedInfo.level,
+      score: 0 
+    }])
+    
+    if (error) {
+      console.error("Error saving player:", error)
+      alert("เกิดข้อผิดพลาดในการลงทะเบียน")
+    } else {
+      setNickname(savedInfo.nickname)
+      setGameStarted(true)
+    }
+    setLoading(false)
   }
-  setLoading(false)
-}
 
-// แก้ไขฟังก์ชันบันทึกคะแนนตอนจบเกม
-async function saveFinalScore(finalScore) {
-  const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
-  
-  await supabase
-    .from('players')
-    .update({ score: finalScore })
-    .eq('session_id', id)
-    .eq('nickname', savedInfo.nickname)
-    .eq('employee_id', savedInfo.employeeId) // ระบุให้ชัดป้องกันชื่อซ้ำ
+  // ✨ ฟังก์ชันที่เพิ่มเข้าไป: จัดการการตอบคำถามและเลื่อนข้อ
+  async function handleAnswer(selectedLabel) {
+    if (answered) return; // ป้องกันการกดซ้ำ
+    setAnswered(true);
 
-  setIsFinished(true)
-}
+    const currentQ = questions[currentIndex];
+    let newScore = score;
+
+    // ตรวจสอบว่าคำตอบถูกไหม (สมมติว่าฟิลด์ใน DB ชื่อ correct_answer)
+    if (selectedLabel === currentQ.correct_answer) {
+      newScore = score + 1;
+      setScore(newScore);
+    }
+
+    // รอสักครู่ให้พนักงานเห็นว่ากดติดแล้ว (0.5 วินาที)
+    setTimeout(async () => {
+      if (currentIndex + 1 < questions.length) {
+        // ไปข้อถัดไป
+        setCurrentIndex(currentIndex + 1);
+        setAnswered(false);
+      } else {
+        // จบเกม
+        await saveFinalScore(newScore);
+      }
+    }, 500);
+  }
+
+  async function saveFinalScore(finalScore) {
+    const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
+    
+    await supabase
+      .from('players')
+      .update({ score: finalScore })
+      .eq('session_id', id)
+      .eq('nickname', savedInfo.nickname)
+      .eq('employee_id', savedInfo.employeeId)
+
+    setIsFinished(true)
+  }
 
   if (!gameStarted) {
     return (
@@ -87,7 +107,9 @@ async function saveFinalScore(finalScore) {
         <div style={s.card}>
             <h1>📝 แบบทดสอบพนักงาน</h1>
             <input style={s.input} placeholder="ระบุชื่อเล่นของคุณ" value={nickname} onChange={e => setNickname(e.target.value)} />
-            <button onClick={startGame} disabled={loading} style={s.btnPrimary}>{loading ? 'กำลังเข้าสู่ระบบ...' : 'เริ่มทำข้อสอบ'}</button>
+            <button onClick={startGame} disabled={loading} style={s.btnPrimary}>
+                {loading ? 'กำลังเข้าสู่ระบบ...' : 'เริ่มทำข้อสอบ'}
+            </button>
         </div>
       </div>
     )
@@ -112,11 +134,8 @@ async function saveFinalScore(finalScore) {
   if (questions.length === 0) return <div style={s.container}>กำลังโหลดข้อสอบ...</div>
   
   const currentQ = questions[currentIndex]
-  
-  // ✨ จุดที่ปรับปรุง: ดึงตัวเลือกจาก JSON Array (options) ที่เทรนเนอร์สร้างไว้
   const choices = currentQ.options || [] 
   
-  // ฟังก์ชันช่วยกำหนดสีปุ่มตาม Label
   const getBtnColor = (label) => {
     const colors = { A: '#ff7675', B: '#74b9ff', C: '#ffeaa7', D: '#55efc4' }
     return colors[label] || '#eee'
@@ -136,7 +155,7 @@ async function saveFinalScore(finalScore) {
               key={c.label} 
               disabled={answered} 
               onClick={() => handleAnswer(c.label)} 
-              style={{...s.choiceBtn(getBtnColor(c.label)), opacity: answered ? 0.5 : 1}}
+              style={{...s.choiceBtn(getBtnColor(c.label)), opacity: answered ? 0.6 : 1}}
             >
               <b style={{marginRight: '8px'}}>{c.label}.</b> {c.text}
             </button>
@@ -150,7 +169,7 @@ async function saveFinalScore(finalScore) {
 const s = {
   container: { minHeight: '100vh', background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', fontFamily: 'sans-serif' },
   card: { background: 'white', padding: '40px', borderRadius: '25px', textAlign: 'center', width: '100%', maxWidth: '400px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' },
-  questionCard: { background: 'white', padding: '30px', borderRadius: '25px', width: '100%', maxWidth: '600px', textAlign: 'center', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' },
+  questionCard: { background: 'white', padding: '30px', borderRadius: '25px', width: '100%', maxWidth: '600px', textAlign: 'center', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', position: 'relative', zIndex: 10 },
   input: { width: '100%', padding: '15px', borderRadius: '10px', border: '1px solid #ddd', marginBottom: '20px', boxSizing: 'border-box' },
   btnPrimary: { width: '100%', padding: '15px', background: '#2d3436', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' },
   btnBack: { width: '100%', padding: '15px', background: '#f1f2f6', border: 'none', borderRadius: '10px', cursor: 'pointer' },
@@ -169,6 +188,7 @@ const s = {
     fontSize: '1rem',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    transition: 'transform 0.1s'
   })
 }
