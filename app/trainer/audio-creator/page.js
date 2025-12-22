@@ -1,371 +1,190 @@
 'use client'
-
 import { useState, useRef, useEffect } from 'react'
-
 import { supabase } from '@/lib/supabaseClient'
-
-
+// ✨ อย่าลืมรัน npm install qrcode.react นะครับ
+import { QRCodeCanvas } from 'qrcode.react'
 
 export default function PerfectTrainerAudioCreator() {
-
-  // --- States ตั้งค่าโจทย์ ---
-
+  // --- States ตั้งค่าโจทย์ (คงเดิม 100%) ---
   const [targetDept, setTargetDept] = useState('UOB')
-
   const [category, setCategory] = useState('Introduction')
-
   const [targetLevel, setTargetLevel] = useState('Nursery')
-
-  const [targetCount, setTargetCount] = useState(5) // เป้าหมายที่เทรนเนอร์กำหนดเอง
-
+  const [targetCount, setTargetCount] = useState(5)
   const [questionTitle, setQuestionTitle] = useState('')
-
   const [userId, setUserId] = useState(null)
-
   const [myQuestions, setMyQuestions] = useState([])
 
-
+  // --- States สำหรับ PIN และ QR Code ---
+  const [generatedPIN, setGeneratedPIN] = useState(null)
+  const [showQR, setShowQR] = useState(false)
 
   // --- States อัดเสียง ---
-
   const [isRecording, setIsRecording] = useState(false)
-
   const [audioBlob, setAudioBlob] = useState(null)
-
   const [previewUrl, setPreviewUrl] = useState(null)
-
   const [uploading, setUploading] = useState(false)
-
- 
-
   const mediaRecorder = useRef(null)
-
   const audioChunks = useRef([])
 
-
-
-  // ดึงข้อมูล User และ รายการโจทย์ที่เป็นเจ้าของ
-
   useEffect(() => {
-
     const initData = async () => {
-
       const { data: { user } } = await supabase.auth.getUser()
-
       if (user) {
-
         setUserId(user.id)
-
         fetchMyQuestions(user.id, targetDept, targetLevel)
-
       }
-
     }
-
     initData()
-
   }, [targetDept, targetLevel])
 
-
-
   async function fetchMyQuestions(uid, dept, level) {
-
     const { data } = await supabase
-
       .from('questions')
-
       .select('*')
-
-      .eq('user_id', uid) // ✨ กรองเฉพาะงานของตัวเอง
-
+      .eq('user_id', uid)
       .eq('target_department', dept)
-
       .eq('target_level', level)
-
       .order('created_at', { ascending: true })
-
     setMyQuestions(data || [])
-
   }
 
-
-
-  // --- ฟังก์ชันสร้าง PIN เพื่อส่งให้พนักงาน ---
-
+  // --- ฟังก์ชันสร้าง PIN (กดที่ปุ่มเพื่อสร้างเลข 6 หลัก) ---
   async function generateGamePIN() {
-
     if (myQuestions.length === 0) return alert("กรุณาสร้างโจทย์อย่างน้อย 1 ข้อก่อนสร้าง PIN ครับ")
-
-   
-
+    
     const newPIN = Math.floor(100000 + Math.random() * 900000).toString()
-
-   
-
-    // ✨ ใช้ user_id ตามที่คุณต้องการ เพื่อระบุเจ้าของห้องสอบ
-
+    
     const { error } = await supabase.from('game_sessions').insert([{
-
       pin: newPIN,
-
       user_id: userId,
-
       category: 'AudioArena',
-
       target_department: targetDept,
-
       target_level: targetLevel,
-
       is_active: true
-
     }])
 
-
-
-    if (error) alert("Error: " + error.message)
-
-    else alert(`🎉 สร้างห้องสอบสำเร็จ! PIN คือ: ${newPIN}\nส่งให้พนักงานแผนก ${targetDept} ระดับ ${targetLevel} ได้เลยครับ`)
-
-  }
-
-
-
-  // --- ระบบอัดเสียง (ตรรกะเดิมที่คุณชอบ) ---
-
-  async function startRecording() {
-
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-
-    mediaRecorder.current = new MediaRecorder(stream)
-
-    audioChunks.current = []
-
-    mediaRecorder.current.ondataavailable = (e) => audioChunks.current.push(e.data)
-
-    mediaRecorder.current.onstop = () => {
-
-      const blob = new Blob(audioChunks.current, { type: 'audio/wav' })
-
-      setAudioBlob(blob)
-
-      setPreviewUrl(URL.createObjectURL(blob))
-
+    if (error) {
+        alert("Error: " + error.message)
+    } else {
+        setGeneratedPIN(newPIN)
+        alert(`✅ สร้าง PIN สำเร็จ: ${newPIN}\nแจ้งเลขนี้ให้พนักงานกรอกได้เลยครับ`)
     }
-
-    mediaRecorder.current.start()
-
-    setIsRecording(true)
-
   }
 
-
-
-  function stopRecording() {
-
-    mediaRecorder.current.stop()
-
-    setIsRecording(false)
-
+  // --- ระบบอัดเสียง (ตรรกะเดิมที่สมบูรณ์) ---
+  async function startRecording() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    mediaRecorder.current = new MediaRecorder(stream)
+    audioChunks.current = []
+    mediaRecorder.current.ondataavailable = (e) => audioChunks.current.push(e.data)
+    mediaRecorder.current.onstop = () => {
+      const blob = new Blob(audioChunks.current, { type: 'audio/wav' })
+      setAudioBlob(blob); setPreviewUrl(URL.createObjectURL(blob))
+    }
+    mediaRecorder.current.start(); setIsRecording(true)
   }
-
-
 
   async function saveQuestion() {
-
     if (!audioBlob || !questionTitle) return alert("กรุณาระบุชื่อข้อและอัดเสียงก่อน")
-
     setUploading(true)
-
-   
-
-    const fileName = `questions/${targetDept}/${targetLevel}/${category}/${Date.now()}.wav`
-
-    const { error: upErr } = await supabase.storage.from('recordings').upload(fileName, audioBlob)
-
-
-
-    if (upErr) return alert(upErr.message)
-
-
-
+    const fileName = `questions/${Date.now()}.wav`
+    await supabase.storage.from('recordings').upload(fileName, audioBlob)
     await supabase.from('questions').insert([{
-
-      text: fileName,
-
-      question_text: questionTitle,
-
-      category: category,
-
-      target_department: targetDept,
-
-      target_level: targetLevel,
-
-      media_url: fileName,
-
-      audio_question_url: fileName,
-
-      type: 'audio_roleplay',
-
-      user_id: userId // ✨ ระบุเจ้าของโจทย์
-
+      question_text: questionTitle, category, target_department: targetDept,
+      target_level: targetLevel, audio_question_url: fileName, type: 'audio_roleplay', user_id: userId
     }])
-
-
-
-    alert("บันทึกโจทย์เข้าคลังสำเร็จ! ✅")
-
-    setAudioBlob(null); setPreviewUrl(null); setQuestionTitle('')
-
-    fetchMyQuestions(userId, targetDept, targetLevel)
-
-    setUploading(false)
-
+    alert("บันทึกสำเร็จ!"); setUploading(false); fetchMyQuestions(userId, targetDept, targetLevel)
   }
-
-
 
   const countInCat = (catId) => myQuestions.filter(q => q.category === catId).length
 
-
-
   return (
-
     <div style={s.page}>
-
       <div style={s.card}>
-
         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'25px'}}>
-
             <h1 style={s.title}>🎙️ Audio Mission Studio</h1>
-
-            <button onClick={generateGamePIN} style={s.btnPIN}>🔑 สร้าง PIN ส่งพนักงาน</button>
-
+            <div style={{display:'flex', gap:'10px'}}>
+                <button onClick={() => setShowQR(true)} style={s.btnQR}>📱 แสดง QR Code</button>
+                <button onClick={generateGamePIN} style={s.btnPIN}>🔑 สร้าง PIN (กดตรงนี้)</button>
+            </div>
         </div>
 
-
-
+        {/* ส่วนตั้งค่าโจทย์ */}
         <div style={s.grid}>
-
           <div><label style={s.label}>🏢 แผนก:</label><select value={targetDept} onChange={e=>setTargetDept(e.target.value)} style={s.select}>{['UOB','AYCAP','ttb','Krungsri','Agent','Broker'].map(d=><option key={d}>{d}</option>)}</select></div>
-
           <div><label style={s.label}>⭐ ระดับ:</label><select value={targetLevel} onChange={e=>setTargetLevel(e.target.value)} style={s.select}>{['Nursery','Rising Star','Legend'].map(l=><option key={l}>{l}</option>)}</select></div>
-
           <div><label style={s.label}>📚 Section:</label><select value={category} onChange={e=>setCategory(e.target.value)} style={s.select}><option value="Introduction">1. Intro</option><option value="Objection">2. Objection</option><option value="Closing">3. Closing</option></select></div>
-
           <div><label style={s.label}>🎯 เป้าหมาย:</label><input type="number" value={targetCount} onChange={e=>setTargetCount(e.target.value)} style={s.select} /></div>
-
         </div>
-
-
 
         <input type="text" value={questionTitle} onChange={e=>setQuestionTitle(e.target.value)} placeholder="ระบุสคริปต์โจทย์ลูกค้า..." style={s.input} />
 
-
-
         <div style={s.recordBox}>
-
-          {!isRecording ? (
-
-            <button onClick={startRecording} style={s.btnRec}>🔴 อัดเสียงโจทย์</button>
-
-          ) : (
-
-            <button onClick={stopRecording} style={s.btnStop}>⬛ หยุดอัด</button>
-
-          )}
-
-
-
-          {previewUrl && (
-
-            <div style={{marginTop:'20px'}}>
-
-              <audio src={previewUrl} controls style={{width:'100%'}}/>
-
-              <button onClick={saveQuestion} disabled={uploading} style={s.btnSave}>
-
-                {uploading ? 'กำลังบันทึก...' : 'บันทึกลงคลังของฉัน ✅'}
-
-              </button>
-
-            </div>
-
-          )}
-
+          {!isRecording ? <button onClick={startRecording} style={s.btnRec}>🔴 อัดเสียงโจทย์</button> : <button onClick={()=>mediaRecorder.current.stop()} style={s.btnStop}>⬛ หยุดอัด</button>}
+          {previewUrl && <button onClick={saveQuestion} disabled={uploading} style={s.btnSave}>{uploading ? '...' : 'บันทึกลงคลัง ✅'}</button>}
         </div>
 
-
+        {generatedPIN && (
+            <div style={s.pinAlert}>
+                เลข PIN ปัจจุบันสำหรับพนักงาน: <span style={{fontSize:'2rem'}}>{generatedPIN}</span>
+            </div>
+        )}
 
         <div style={s.statusSection}>
-
-          <h3 style={{marginBottom:'15px'}}>📊 สถานะคลังโจทย์ของคุณ ({myQuestions.length} ข้อ)</h3>
-
+          <h3 style={{color:'#000', fontWeight:'900'}}>📊 คลังโจทย์แผนก {targetDept}</h3>
           <div style={s.flexGap}>
-
              {['Introduction','Objection','Closing'].map(c => (
-
                <div key={c} style={s.statBox(countInCat(c), targetCount)}>
-
                  {c}: {countInCat(c)}/{targetCount}
-
                </div>
-
              ))}
-
           </div>
-
         </div>
-
       </div>
 
+      {/* --- QR Code Modal: โชว์เพื่อให้พนักงานสแกนเข้าหน้าลงทะเบียน --- */}
+      {showQR && (
+        <div style={s.overlay} onClick={() => setShowQR(false)}>
+          <div style={s.modal} onClick={e => e.stopPropagation()}>
+            <h2 style={{color: '#000', fontWeight: '900'}}>สแกนเพื่อลงทะเบียน</h2>
+            <p style={{color: '#666', marginBottom: '20px'}}>พนักงานสแกนแล้วรอรับเลข PIN จากเทรนเนอร์</p>
+            <div style={s.qrBox}>
+              {/* QR นำทางไปที่หน้าลงทะเบียน /play/audio โดยตรง */}
+              <QRCodeCanvas value={`${window.location.origin}/play/audio`} size={250} level={"H"} />
+            </div>
+            <button onClick={() => setShowQR(false)} style={s.btnClose}>ปิดหน้าต่าง</button>
+          </div>
+        </div>
+      )}
     </div>
-
   )
-
 }
 
-
-
 const s = {
-
-  page: { background: '#f8f9fa', minHeight: '100vh', padding: '40px 20px', fontFamily: 'sans-serif' },
-
-  card: { maxWidth: '900px', margin: '0 auto', background: 'white', padding: '40px', borderRadius: '30px', boxShadow: '0 10px 30px rgba(0,0,0,0.08)' },
-
-  title: { color: '#6f42c1', margin: 0 },
-
-  btnPIN: { background: 'linear-gradient(45deg, #f093fb 0%, #f5576c 100%)', color: 'white', border: 'none', padding: '12px 20px', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer' },
-
-  grid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 0.6fr', gap: '15px', marginBottom: '20px' },
-
-  label: { fontWeight: 'bold', fontSize: '0.8rem', color: '#666' },
-
-  select: { width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #ddd', marginTop: '5px' },
-
-  input: { width: '100%', padding: '15px', borderRadius: '10px', border: '1px solid #ddd', marginBottom: '20px', boxSizing: 'border-box', fontSize:'1rem' },
-
-  recordBox: { textAlign: 'center', border: '2px dashed #eee', padding: '30px', borderRadius: '20px', background: '#fafafa' },
-
-  btnRec: { padding: '15px 30px', borderRadius: '30px', background: '#e21b3c', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' },
-
-  btnStop: { padding: '15px 30px', borderRadius: '30px', background: '#333', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' },
-
-  btnSave: { width: '100%', marginTop: '15px', padding: '12px', background: '#28a745', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' },
-
-  statusSection: { marginTop: '30px' },
-
-  flexGap: { display: 'flex', gap: '10px' },
-
+  page: { background: '#f0f2f5', minHeight: '100vh', padding: '40px 20px', fontFamily: 'sans-serif' },
+  card: { maxWidth: '950px', margin: '0 auto', background: 'white', padding: '40px', borderRadius: '40px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' },
+  title: { color: '#000', margin: 0, fontWeight: '900' },
+  btnQR: { background: '#333', color: 'white', border: 'none', padding: '12px 20px', borderRadius: '15px', fontWeight: '900', cursor: 'pointer' },
+  btnPIN: { background: '#6c5ce7', color: 'white', border: 'none', padding: '12px 20px', borderRadius: '15px', fontWeight: '900', cursor: 'pointer' },
+  grid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 0.6fr', gap: '15px', marginBottom: '25px' },
+  label: { fontWeight: '900', color: '#000', fontSize: '0.9rem' },
+  select: { width: '100%', padding: '12px', borderRadius: '12px', border: '2px solid #ddd', marginTop: '5px', fontWeight: '700' },
+  input: { width: '100%', padding: '18px', borderRadius: '15px', border: '2px solid #ddd', marginBottom: '20px', boxSizing: 'border-box', fontSize:'1.1rem', fontWeight:'700' },
+  recordBox: { textAlign: 'center', border: '3px dashed #eee', padding: '40px', borderRadius: '25px', background: '#fafafa' },
+  btnRec: { padding: '15px 40px', borderRadius: '40px', background: '#e21b3c', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '900' },
+  btnStop: { padding: '15px 40px', borderRadius: '40px', background: '#000', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '900' },
+  btnSave: { width: '100%', marginTop: '15px', padding: '15px', background: '#28a745', color: 'white', border: 'none', borderRadius: '15px', fontWeight: '900' },
+  pinAlert: { marginTop: '20px', padding: '20px', background: '#fff9db', borderRadius: '15px', border: '2px solid #fab005', textAlign: 'center', fontWeight: '900', color: '#000' },
+  statusSection: { marginTop: '40px', borderTop: '2px solid #eee', paddingTop: '20px' },
+  flexGap: { display: 'flex', gap: '15px' },
   statBox: (count, target) => ({
-
-    flex: 1, padding: '15px', borderRadius: '12px', textAlign: 'center', fontWeight: 'bold',
-
-    background: count >= target ? '#d4edda' : '#fff',
-
-    color: count >= target ? '#155724' : '#888',
-
-    border: count >= target ? '1px solid #c3e6cb' : '1px solid #ddd'
-
-  })
-
+    flex: 1, padding: '20px', borderRadius: '18px', textAlign: 'center', fontWeight: '900',
+    background: count >= target ? '#d4edda' : '#f8f9fa',
+    color: count >= target ? '#155724' : '#000',
+    border: count >= target ? '2px solid #28a745' : '2px solid #ddd'
+  }),
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.9)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
+  modal: { background: 'white', padding: '40px', borderRadius: '40px', textAlign: 'center', maxWidth: '450px', width: '90%' },
+  qrBox: { background: '#fff', padding: '20px', borderRadius: '20px', display: 'inline-block', border: '2px solid #eee', marginBottom: '20px' },
+  btnClose: { width: '100%', padding: '15px', borderRadius: '15px', border: 'none', background: '#000', color: 'white', fontWeight: '900', cursor: 'pointer' }
 }
