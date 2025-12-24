@@ -5,7 +5,7 @@ import Link from "next/link";
 
 export default function ClientLayout({ children }) {
   const pathname = usePathname();
-  const isPlayPage = pathname.startsWith("/play");
+  const isPlayPage = pathname.startsWith("/play") || pathname.includes("gamequiz");
   
   // ตั้งค่าเริ่มต้น: ถ้าหน้า Play ให้ปิด Sidebar, ถ้าหน้าอื่นให้เปิดไว้
   const [isSidebarOpen, setIsSidebarOpen] = useState(!isPlayPage);
@@ -42,6 +42,7 @@ export default function ClientLayout({ children }) {
             <p style={s.menuLabel}>TRAINER TOOLS</p>
             {/* ✅ บรรทัดที่เพิ่มเข้ามาใหม่ */}
             <Link href="/sales-game" style={s.link(isActive("/sales-game"))}>🧩 เกมจับคู่ Jigsaw</Link>
+            <Link href="/sales-game/gamequiz" style={s.link(isActive("/sales-game/gamequiz"))}>🎯 เกมสุ่ม QR (DISC)</Link>
             <Link href="/trainer/video-creator" style={s.link(isActive("/trainer/video-creator"))}>📹 จัดการโจทย์วิดีโอ</Link>
 
             <p style={s.menuLabel}>REPORT</p>
