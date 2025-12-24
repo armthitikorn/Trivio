@@ -40,6 +40,8 @@ export default function ClientLayout({ children }) {
             <Link href="/trainer/audio-creator" style={s.link(isActive("/trainer/audio-creator"))}>🎙️ สร้างโจทย์เสียง</Link>
 
             <p style={s.menuLabel}>TRAINER TOOLS</p>
+            {/* ✅ บรรทัดที่เพิ่มเข้ามาใหม่ */}
+            <Link href="/sales-game" style={s.link(isActive("/sales-game"))}>🧩 เกมจับคู่ Jigsaw</Link>
             <Link href="/trainer/video-creator" style={s.link(isActive("/trainer/video-creator"))}>📹 จัดการโจทย์วิดีโอ</Link>
 
             <p style={s.menuLabel}>REPORT</p>
