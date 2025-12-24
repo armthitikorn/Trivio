@@ -2,7 +2,8 @@
 
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
-import QRCode from 'qrcode.react'; // อย่าลืม npm install qrcode.react
+// 1. เปลี่ยนการ Import เป็นแบบนี้ครับ
+import { QRCodeCanvas } from 'qrcode.react'; 
 
 function QuizSystem() {
   const searchParams = useSearchParams();
@@ -32,7 +33,7 @@ function QuizSystem() {
     { id: 20, cat: 'Success', q: 'หากปิดการขายได้แล้ว คุณจะพูดยังไงให้ลูกค้าช่วย "บอกต่อ" (Referral) คนรู้จักให้คุณ?' }
   ];
 
-  const currentQuiz = questions.find(q => String(q.id) === String(id));
+const currentQuiz = questions.find(q => String(q.id) === String(id));
 
   // --- VIEW 1: หน้าจอ Trainer (แสดง QR ทั้งหมด) ---
   if (!id) {
@@ -44,7 +45,12 @@ function QuizSystem() {
             <div key={q.id} style={styles.qrCard}>
               <span style={styles.badge}>{q.cat} - ข้อ {q.id}</span>
               <div style={{ margin: '10px 0' }}>
-                <QRCode value={`${baseUrl}?id=${q.id}`} size={120} level="H" />
+                {/* 2. เปลี่ยนจาก <QRCode /> เป็น <QRCodeCanvas /> */}
+                <QRCodeCanvas 
+                  value={`${baseUrl}?id=${q.id}`} 
+                  size={120} 
+                  level="H" 
+                />
               </div>
               <p style={styles.qrText}>สแกนเพื่อรับโจทย์</p>
             </div>
