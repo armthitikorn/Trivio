@@ -3,15 +3,14 @@
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-function QuizCard() {
+function QuizContent() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
 
-  // ข้อมูลคำถาม (ใส่ให้ครบ 20 ข้อ)
   const questions = [
     { id: 1, cat: 'Health', q: 'ลูกค้าบอกว่า "เบี้ยทิ้งเปล่าเสียดายเงิน" คุณจะเปลี่ยนมุมมองเขาอย่างไรให้เห็นค่าของความคุ้มครอง?' },
     { id: 2, cat: 'Savings', q: 'เปรียบเทียบ "ประกันสะสมทรัพย์" กับ "การฝากธนาคาร" ให้ลูกค้าฟังใน 30 วินาที' },
-    { id: 3, cat: 'DISC', q: 'เจอลูกค้ากลุ่ม D (ใจร้อน) พูดว่า "เข้าเรื่องเลยน้อง พี่มีเวลา 2 นาที" คุณจะเปิดใจเขาอย่างไร?' },
+    { id: 3, cat: 'DISC (D)', q: 'เจอลูกค้ากลุ่ม D ที่ใจร้อนและพูดว่า "สรุปเนื้อๆ มาเลยน้อง" คุณจะนำเสนออย่างไรให้กระชับที่สุด?' },
     { id: 4, cat: 'Health', q: 'ลูกค้าถามว่า "ทำไมเบี้ยถึงปรับขึ้นตามอายุ?" อธิบายให้เขารู้สึกว่าสมเหตุสมผล' },
     { id: 5, cat: 'Savings', q: 'ถ้าลูกค้ากังวลว่า "ส่งไม่ไหวกลางคัน" คุณจะแนะนำทางออกหรือความยืดหยุ่นของแผนนี้อย่างไร?' },
     { id: 6, cat: 'DISC', q: 'ลูกค้ากลุ่ม I (คุยเก่ง) ชวนคุยเรื่องอื่นนานเกินไป คุณจะใช้เทคนิคไหนพากลับเข้าเรื่องขาย?' },
@@ -31,31 +30,35 @@ function QuizCard() {
     { id: 20, cat: 'Success', q: 'หากปิดการขายได้แล้ว คุณจะพูดยังไงให้ลูกค้าช่วย "บอกต่อ" (Referral) คนรู้จักให้คุณ?' }
   ];
 
-  const currentQuiz = questions.find(q => q.id === parseInt(id));
+  // ค้นหาคำถาม
+  const currentQuiz = questions.find(q => String(q.id) === String(id));
 
-  if (!id) return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', textAlign: 'center', padding: '20px' }}>
-      <h2>📲 พร้อมแล้ว! กรุณาสแกน QR Code <br/>เพื่อรับโจทย์การขายครับ</h2>
-    </div>
-  );
-
-  if (!currentQuiz) return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-      <h2>❌ ไม่พบคำถามข้อที่ {id}</h2>
-    </div>
-  );
-
-  return (
-    <div style={{ padding: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#2563eb' }}>
-      <div style={{ backgroundColor: 'white', padding: '40px', borderRadius: '24px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', maxWidth: '500px', width: '100%', textAlign: 'center' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-          <span style={{ backgroundColor: '#dbeafe', color: '#1e40af', padding: '5px 15px', borderRadius: '20px', fontWeight: 'bold', fontSize: '14px' }}>{currentQuiz.cat}</span>
-          <span style={{ color: '#94a3b8', fontWeight: 'bold', fontSize: '14px' }}>ข้อที่ {currentQuiz.id}</span>
+  // กรณีที่ 1: สแกนเข้ามาแล้วแต่ไม่มี ID หรือ ID ไม่ถูกต้อง
+  if (!id || !currentQuiz) {
+    return (
+      <div style={styles.center}>
+        <div style={styles.card}>
+          <h2 style={{color: '#333'}}>📱 พร้อมรับคำถามหรือยัง?</h2>
+          <p style={{color: '#666'}}>กรุณาสแกน QR Code บนหน้าจอ Trainer เพื่อเริ่มเกมครับ</p>
+          {id && <p style={{fontSize: '12px', color: 'red'}}>Error: ไม่พบคำถามข้อที่ {id}</p>}
         </div>
-        <h1 style={{ fontSize: '26px', color: '#1e293b', lineHeight: '1.5', marginBottom: '30px', fontWeight: 'bold' }}>"{currentQuiz.q}"</h1>
-        <p style={{ color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '20px', fontStyle: 'italic', fontSize: '14px' }}>
-          เตรียมคำพูดให้พร้อม แล้วตอบเทรนเนอร์ทันที!
-        </p>
+      </div>
+    );
+  }
+
+  // กรณีที่ 2: สแกนสำเร็จและพบคำถาม (ส่วนที่จะขึ้นบนมือถือพนักงาน)
+  return (
+    <div style={styles.container}>
+      <div style={styles.card}>
+        <div style={styles.header}>
+          <span style={styles.badge}>{currentQuiz.cat}</span>
+          <span style={styles.id}>ข้อที่ {currentQuiz.id}</span>
+        </div>
+        <h1 style={styles.question}>"{currentQuiz.q}"</h1>
+        <div style={styles.footer}>
+          <p>💡 ตอบตามบุคลิกลูกค้าที่ได้รับมอบหมาย</p>
+          <strong style={{color: '#2563eb'}}>สู้ๆ ครับพนักงาน!</strong>
+        </div>
       </div>
     </div>
   );
@@ -63,8 +66,19 @@ function QuizCard() {
 
 export default function GameQuizPage() {
   return (
-    <Suspense fallback={<div>กำลังโหลดคำถาม...</div>}>
-      <QuizCard />
+    <Suspense fallback={<div style={styles.center}>กำลังโหลดโจทย์...</div>}>
+      <QuizContent />
     </Suspense>
   );
 }
+
+const styles = {
+  center: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f3f4f6', fontFamily: 'sans-serif', padding: '20px' },
+  container: { padding: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#2563eb' },
+  card: { backgroundColor: 'white', padding: '40px', borderRadius: '24px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', maxWidth: '500px', width: '100%', textAlign: 'center' },
+  header: { display: 'flex', justifyContent: 'space-between', marginBottom: '20px' },
+  badge: { backgroundColor: '#dbeafe', color: '#1e40af', padding: '5px 15px', borderRadius: '20px', fontWeight: 'bold', fontSize: '14px' },
+  id: { color: '#94a3b8', fontWeight: 'bold', fontSize: '14px' },
+  question: { fontSize: '24px', color: '#1e293b', lineHeight: '1.5', marginBottom: '30px', fontWeight: 'bold' },
+  footer: { color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '20px', fontSize: '14px' }
+};
