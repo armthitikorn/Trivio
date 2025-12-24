@@ -2,10 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { QRCodeCanvas } from 'qrcode.react'; // ตัวสร้าง QR Code
+import { QRCodeCanvas } from 'qrcode.react';
 
 export default function SalesJigsawGame() {
-    // --- 1. การจัดการ State ของเกม ---
     const [isClient, setIsClient] = useState(false);
     const [matchedIds, setMatchedIds] = useState([]);
     const [shuffledObjections, setShuffledObjections] = useState([]);
@@ -14,7 +13,6 @@ export default function SalesJigsawGame() {
     const [showQR, setShowQR] = useState(false);
     const [currentUrl, setCurrentUrl] = useState('');
 
-    // --- 2. ข้อมูลข้อโต้แย้งและบทตอบโต้ (10 ข้อตามที่คุณระบุ) ---
     const pairs = [
         { id: 1, q: "เบี้ยแพงไปหน่อย จ่ายไม่ไหว", a: "เฉลี่ยวันละ 30 บาท น้อยกว่าค่ากาแฟ 1 แก้วด้วยซ้ำอยากให้พิจารณาไปด้วยกันเลยนะคะ", qAudio: "/audio/q1.wav", aAudio: "/audio/a1.wav" },
         { id: 2, q: "มีประกันเยอะแล้ว ครบแล้ว", a: "จริงๆคุ้มค่านะคะ เพราะเล่มนี้เน้นชดเชย รายได้ ที่พี่ยังไม่มีค่ะ", qAudio: "/audio/q2.wav", aAudio: "/audio/a2.wav" },
@@ -28,7 +26,6 @@ export default function SalesJigsawGame() {
         { id: 10, q: "เบี้ยจ่ายทิ้งไม่ได้อะไรคืนไม่ชอบ", a: "เป็นการซื้อความสบายใจให้ครอบครัวในราคาถูกที่สุดแล้วค่ะ", qAudio: "/audio/q10.wav", aAudio: "/audio/a10.wav" }
     ];
 
-    // --- 3. การเริ่มต้นระบบ ---
     useEffect(() => {
         setIsClient(true);
         setCurrentUrl(window.location.href);
@@ -42,19 +39,20 @@ export default function SalesJigsawGame() {
         setScore(0);
     };
 
-    // --- 4. ฟังก์ชันการทำงาน (เสียง และ การลากวาง) ---
     const playSound = (url) => {
         const audio = new Audio(url);
-        audio.play().catch(e => console.error("ไม่พบไฟล์เสียงที่:", url));
+        audio.play().catch(e => console.error("Audio Error"));
     };
 
     const handleDragEnd = (event, info, pairId) => {
         const targetElement = document.getElementById(`target-${pairId}`);
         if (targetElement) {
             const rect = targetElement.getBoundingClientRect();
-            const { x, y } = info.point;
-            
-            if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+            // ใช้ touch point แรกถ้ารองรับ touch event เพื่อความแม่นยำบนมือถือ
+            const pointX = info.point.x;
+            const pointY = info.point.y;
+
+            if (pointX >= rect.left && pointX <= rect.right && pointY >= rect.top && pointY <= rect.bottom) {
                 if (!matchedIds.includes(pairId)) {
                     setMatchedIds(prev => [...prev, pairId]);
                     setScore(prev => prev + 1);
@@ -67,67 +65,119 @@ export default function SalesJigsawGame() {
 
     return (
         <div className="game-container">
-            {/* --- 5. การตกแต่ง CSS (Glassmorphism Style) --- */}
             <style jsx global>{`
                 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
-                .game-container { min-height: 100vh; background: #0f172a; color: white; padding: 40px 20px; font-family: 'Sarabun', sans-serif; }
-                .glass-card { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 25px; }
-                .jigsaw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; max-width: 1100px; margin: 0 auto; }
-                .piece { min-height: 95px; display: flex; align-items: center; padding: 18px; border-radius: 15px; margin-bottom: 12px; position: relative; color: white !important; }
-                .obj-card { background: linear-gradient(90deg, #1e40af, #3b82f6); border-left: 6px solid #60a5fa; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-                .ans-card { background: rgba(255, 255, 255, 0.08); border: 2px dashed rgba(255, 255, 255, 0.3); cursor: grab; color: white !important; }
-                .is-matched { background: #10b981 !important; border: none !important; opacity: 0.6; pointer-events: none; transition: all 0.5s ease; }
-                .play-btn { background: rgba(255,255,255,0.2); border: none; border-radius: 50%; width: 40px; height: 40px; color: white; margin-right: 15px; display: flex; align-items: center; justify-content: center; }
-                .qr-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+                
+                body { margin: 0; padding: 0; overflow-x: hidden; background: #0f172a; }
+                .game-container { 
+                    min-height: 100vh; 
+                    background: #0f172a; 
+                    color: white; 
+                    padding: 20px 10px; 
+                    font-family: 'Sarabun', sans-serif; 
+                    overflow-x: hidden; /* ป้องกันการเลื่อนซ้ายขวา */
+                }
+
+                /* บังคับ 2 คอลัมน์ตลอดเวลา */
+                .jigsaw-grid { 
+                    display: grid; 
+                    grid-template-columns: 1fr 1fr; /* คงไว้ที่ 2 คอลัมน์เสมอ */
+                    gap: 12px; /* ลดช่องว่างระหว่างคอลัมน์ */
+                    max-width: 1000px; 
+                    margin: 0 auto; 
+                }
+
+                /* สไตล์ชิ้นส่วนพื้นฐาน */
+                .piece { 
+                    min-height: 80px; 
+                    display: flex; 
+                    align-items: center; 
+                    padding: 12px; 
+                    border-radius: 12px; 
+                    margin-bottom: 8px; 
+                    font-size: 0.9rem;
+                    color: white !important;
+                    line-height: 1.3;
+                }
+                
+                .play-btn { 
+                    background: rgba(255,255,255,0.2); border: none; border-radius: 50%; 
+                    width: 32px; height: 32px; min-width: 32px; /* ขนาดปุ่มมาตรฐาน */
+                    color: white; margin-right: 10px; display: flex; align-items: center; justify-content: center; 
+                }
+
+                /* ✅ Media Query สำหรับมือถือ (สำคัญมาก) */
+                @media (max-width: 576px) {
+                    .game-container { padding: 15px 5px; } /* ลดขอบจอ */
+                    .jigsaw-grid { gap: 6px; } /* ลดช่องว่างระหว่างชิ้น */
+                    
+                    .piece { 
+                        min-height: 65px; /* ลดความสูงชิ้นส่วน */
+                        padding: 8px; /* ลดขอบใน */
+                        font-size: 0.75rem; /* ลดขนาดตัวหนังสือ */
+                        border-radius: 8px;
+                    }
+                    .play-btn {
+                        width: 26px; height: 26px; min-width: 26px; /* ลดขนาดปุ่มเล่นเสียง */
+                        margin-right: 6px; font-size: 0.8rem;
+                    }
+                    h1.game-title { font-size: 1.4rem !important; margin-bottom: 5px !important; }
+                    .header-actions { margin-bottom: 10px !important; }
+                }
+
+                .obj-card { background: linear-gradient(90deg, #1e40af, #3b82f6); border-left: 4px solid #60a5fa; }
+                .ans-card { background: rgba(255, 255, 255, 0.08); border: 1px dashed rgba(255, 255, 255, 0.4); cursor: grab; }
+                .is-matched { background: #10b981 !important; opacity: 0.6; pointer-events: none; border: none !important; }
+                
+                .glass-card { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(5px); border-radius: 12px; }
+                .qr-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 20px; }
             `}</style>
 
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
             <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
 
-            <div className="container">
-                {/* --- ส่วนหัวแสดงผล --- */}
-                <div className="text-center mb-5">
-                    <div className="d-flex justify-content-between align-items-center mb-4">
-                        <div className="glass-card py-2 px-4">คะแนนปัจจุบัน: <strong>{score} / 10</strong></div>
-                        <button className="btn btn-info rounded-pill px-4 fw-bold" onClick={() => setShowQR(true)}>
-                            <i className="bi bi-qr-code-scan me-2"></i> สแกนเพื่อเข้าเล่น
+            <div className="container-fluid px-0">
+                {/* Header Section (ปรับให้กะทัดรัดบนมือถือ) */}
+                <div className="text-center mb-3 header-actions">
+                    <div className="d-flex justify-content-between align-items-center px-2 mb-2">
+                        <div className="glass-card py-1 px-2 small fw-bold">คะแนน: {score}/10</div>
+                        <button className="btn btn-sm btn-info rounded-pill px-3 py-1 small" onClick={() => setShowQR(true)}>
+                            <i className="bi bi-qr-code-scan me-1"></i> แชร์
                         </button>
                     </div>
-                    <h1 className="fw-bold text-white mb-2">Sales Objection Jigsaw</h1>
-                    <p className="text-info opacity-75">ฝึกทักษะการรับมือข้อโต้แย้งด้วยน้ำเสียงที่เป็นมืออาชีพ</p>
+                    <h1 className="fw-bold text-white game-title">Sales Jigsaw</h1>
+                    <p className="text-info small opacity-75 m-0">ลากคำตอบ (ขวา) วางทับข้อโต้แย้ง (ซ้าย)</p>
                 </div>
 
                 <div className="jigsaw-grid">
-                    {/* --- ฝั่งโจทย์: ข้อโต้แย้งลูกค้า --- */}
-                    <div className="column-questions">
-                        <h6 className="text-muted mb-4 text-center">OBJECTIONS (ฟังเสียงลูกค้า)</h6>
+                    {/* Left Side: Objections */}
+                    <div>
                         {shuffledObjections.map((item) => (
-                            <div key={item.id} id={`target-${item.id}`} className={`piece obj-card ${matchedIds.includes(item.id) ? 'is-matched' : ''}`}>
-                                <button className="play-btn" onClick={() => playSound(item.qAudio)}>
-                                    <i className="bi bi-volume-up-fill"></i>
-                                </button>
-                                <strong>{item.q}</strong>
-                                {matchedIds.includes(item.id) && <i className="bi bi-check-circle-fill ms-auto fs-3 text-white"></i>}
+                            <div key={item.id} id={`target-${item.id}`} className={`piece obj-card shadow-sm ${matchedIds.includes(item.id) ? 'is-matched' : ''}`}>
+                                <button className="play-btn" onClick={() => playSound(item.qAudio)}><i className="bi bi-volume-up-fill"></i></button>
+                                <div style={{overflowWrap: 'break-word', wordBreak: 'break-word'}}><strong>{item.q}</strong></div>
                             </div>
                         ))}
                     </div>
 
-                    {/* --- ฝั่งคำตอบ: บทตอบโต้พนักงาน --- */}
-                    <div className="column-answers">
-                        <h6 className="text-muted mb-4 text-center">RESPONSES (ลากไปวางจับคู่)</h6>
+                    {/* Right Side: Answers */}
+                    <div style={{position: 'relative', zIndex: 10}}>
                         {shuffledAnswers.map((item) => (
                             <div key={item.id}>
                                 {!matchedIds.includes(item.id) ? (
-                                    <motion.div drag dragSnapToOrigin onDragEnd={(e, info) => handleDragEnd(e, info, item.id)} className="piece ans-card shadow-lg">
-                                        <button className="play-btn" onClick={() => playSound(item.aAudio)}>
-                                            <i className="bi bi-play-circle-fill"></i>
-                                        </button>
-                                        <small>{item.a}</small>
+                                    <motion.div 
+                                        drag 
+                                        dragSnapToOrigin 
+                                        onDragEnd={(e, info) => handleDragEnd(e, info, item.id)} 
+                                        className="piece ans-card shadow-sm"
+                                        whileDrag={{ scale: 1.05, zIndex: 1000, boxShadow: "0px 10px 20px rgba(0,0,0,0.3)" }}
+                                    >
+                                        <button className="play-btn" onClick={() => playSound(item.aAudio)}><i className="bi bi-play-circle-fill"></i></button>
+                                        <div style={{overflowWrap: 'break-word', wordBreak: 'break-word'}}>{item.a}</div>
                                     </motion.div>
                                 ) : (
                                     <div className="piece ans-card is-matched">
-                                        <i className="bi bi-check-lg me-3 fs-4"></i>
-                                        <small className="opacity-75">{item.a}</small>
+                                        ✅ <small className="opacity-75">{item.a}</small>
                                     </div>
                                 )}
                             </div>
@@ -136,29 +186,26 @@ export default function SalesJigsawGame() {
                 </div>
             </div>
 
-            {/* --- Pop-up QR Code --- */}
+            {/* QR Modal & Success Modal (คงเดิม) */}
             <AnimatePresence>
                 {showQR && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="qr-overlay" onClick={() => setShowQR(false)}>
-                        <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="glass-card text-center bg-dark p-5" style={{ maxWidth: '400px' }} onClick={(e) => e.stopPropagation()}>
-                            <h4 className="mb-4 text-white">สแกนเพื่อร่วมสนุก</h4>
-                            <div className="bg-white p-3 d-inline-block rounded-4 mb-4">
-                                <QRCodeCanvas value={currentUrl} size={230} includeMargin={true} />
+                        <motion.div className="glass-card p-3 text-center bg-dark text-white" style={{maxWidth: '300px'}} onClick={e => e.stopPropagation()}>
+                            <h6 className="mb-3">สแกนเพื่อเข้าเล่น</h6>
+                            <div className="bg-white p-2 d-inline-block rounded-3 mb-3">
+                                <QRCodeCanvas value={currentUrl} size={180} />
                             </div>
-                            <p className="text-info small mb-4">{currentUrl}</p>
-                            <button className="btn btn-outline-light w-100 rounded-pill py-2" onClick={() => setShowQR(false)}>ปิดหน้าต่าง</button>
+                            <button className="btn btn-sm btn-outline-light w-100 rounded-pill" onClick={() => setShowQR(false)}>ปิด</button>
                         </motion.div>
                     </motion.div>
                 )}
             </AnimatePresence>
-
-            {/* --- หน้าจอแสดงความยินดีเมื่อเล่นจบ --- */}
-            <AnimatePresence>
+             <AnimatePresence>
                 {score === 10 && (
-                    <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="position-fixed top-50 start-50 translate-middle glass-card text-center shadow-lg bg-success p-5" style={{ zIndex: 3000, minWidth: '350px' }}>
-                        <h1 className="display-4 fw-bold text-white mb-3">สุดยอดมาก!</h1>
-                        <p className="lead text-white mb-4">คุณจำสคริปต์การแก้ข้อโต้แย้งได้ครบ 10 ข้อแล้ว</p>
-                        <button className="btn btn-light btn-lg w-100 rounded-pill" onClick={initGame}>เริ่มเกมใหม่อีกครั้ง</button>
+                    <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="position-fixed top-50 start-50 translate-middle glass-card text-center bg-success p-4 shadow-lg" style={{ zIndex: 3000, width: '85%', maxWidth: '350px' }}>
+                        <h2 className="fw-bold mb-2">ยินดีด้วย!</h2>
+                        <p className="small mb-3">คุณจับคู่ได้ถูกต้องครบ 10 ข้อ</p>
+                        <button className="btn btn-sm btn-light w-100 rounded-pill" onClick={initGame}>เล่นใหม่</button>
                     </motion.div>
                 )}
             </AnimatePresence>
