@@ -2,10 +2,12 @@
 
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import QRCode from 'qrcode.react'; // อย่าลืม npm install qrcode.react
 
-function QuizContent() {
+function QuizSystem() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
+  const baseUrl = "https://trivio-fvlk.vercel.app/sales-game/gamequiz";
 
   const questions = [
     { id: 1, cat: 'Health', q: 'ลูกค้าบอกว่า "เบี้ยทิ้งเปล่าเสียดายเงิน" คุณจะเปลี่ยนมุมมองเขาอย่างไรให้เห็นค่าของความคุ้มครอง?' },
@@ -30,55 +32,68 @@ function QuizContent() {
     { id: 20, cat: 'Success', q: 'หากปิดการขายได้แล้ว คุณจะพูดยังไงให้ลูกค้าช่วย "บอกต่อ" (Referral) คนรู้จักให้คุณ?' }
   ];
 
-  // ค้นหาคำถาม
   const currentQuiz = questions.find(q => String(q.id) === String(id));
 
-  // กรณีที่ 1: สแกนเข้ามาแล้วแต่ไม่มี ID หรือ ID ไม่ถูกต้อง
-  if (!id || !currentQuiz) {
+  // --- VIEW 1: หน้าจอ Trainer (แสดง QR ทั้งหมด) ---
+  if (!id) {
     return (
-      <div style={styles.center}>
-        <div style={styles.card}>
-          <h2 style={{color: '#333'}}>📱 พร้อมรับคำถามหรือยัง?</h2>
-          <p style={{color: '#666'}}>กรุณาสแกน QR Code บนหน้าจอ Trainer เพื่อเริ่มเกมครับ</p>
-          {id && <p style={{fontSize: '12px', color: 'red'}}>Error: ไม่พบคำถามข้อที่ {id}</p>}
+      <div style={styles.trainerContainer}>
+        <h1 style={styles.title}>QR Quiz Board (Trainer Only)</h1>
+        <div style={styles.qrGrid}>
+          {questions.map((q) => (
+            <div key={q.id} style={styles.qrCard}>
+              <span style={styles.badge}>{q.cat} - ข้อ {q.id}</span>
+              <div style={{ margin: '10px 0' }}>
+                <QRCode value={`${baseUrl}?id=${q.id}`} size={120} level="H" />
+              </div>
+              <p style={styles.qrText}>สแกนเพื่อรับโจทย์</p>
+            </div>
+          ))}
         </div>
       </div>
     );
   }
 
-  // กรณีที่ 2: สแกนสำเร็จและพบคำถาม (ส่วนที่จะขึ้นบนมือถือพนักงาน)
+  // --- VIEW 2: หน้าจอพนักงาน (เมื่อสแกนแล้ว) ---
+  if (!currentQuiz) return <div style={styles.center}>ไม่พบข้อมูลคำถาม</div>;
+
   return (
-    <div style={styles.container}>
+    <div style={styles.employeeContainer}>
       <div style={styles.card}>
         <div style={styles.header}>
-          <span style={styles.badge}>{currentQuiz.cat}</span>
-          <span style={styles.id}>ข้อที่ {currentQuiz.id}</span>
+          <span style={styles.badgeBlue}>{currentQuiz.cat}</span>
+          <span style={styles.idLabel}>ข้อที่ {currentQuiz.id}</span>
         </div>
         <h1 style={styles.question}>"{currentQuiz.q}"</h1>
         <div style={styles.footer}>
-          <p>💡 ตอบตามบุคลิกลูกค้าที่ได้รับมอบหมาย</p>
-          <strong style={{color: '#2563eb'}}>สู้ๆ ครับพนักงาน!</strong>
+          <p>💡 เตรียมคำตอบให้พร้อมแล้วพูดเลย!</p>
         </div>
       </div>
     </div>
   );
 }
 
-export default function GameQuizPage() {
+export default function GamePage() {
   return (
-    <Suspense fallback={<div style={styles.center}>กำลังโหลดโจทย์...</div>}>
-      <QuizContent />
+    <Suspense fallback={<div>Loading...</div>}>
+      <QuizSystem />
     </Suspense>
   );
 }
 
 const styles = {
-  center: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f3f4f6', fontFamily: 'sans-serif', padding: '20px' },
-  container: { padding: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#2563eb' },
-  card: { backgroundColor: 'white', padding: '40px', borderRadius: '24px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', maxWidth: '500px', width: '100%', textAlign: 'center' },
+  trainerContainer: { padding: '40px', textAlign: 'center', background: '#f8f9fa', minHeight: '100vh' },
+  qrGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px', padding: '20px' },
+  qrCard: { background: 'white', padding: '15px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' },
+  qrText: { fontSize: '12px', color: '#666', marginTop: '5px' },
+  badge: { fontSize: '11px', background: '#eee', padding: '2px 8px', borderRadius: '10px' },
+  
+  employeeContainer: { padding: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#2563eb' },
+  card: { backgroundColor: 'white', padding: '40px', borderRadius: '24px', maxWidth: '500px', width: '100%', textAlign: 'center' },
   header: { display: 'flex', justifyContent: 'space-between', marginBottom: '20px' },
-  badge: { backgroundColor: '#dbeafe', color: '#1e40af', padding: '5px 15px', borderRadius: '20px', fontWeight: 'bold', fontSize: '14px' },
-  id: { color: '#94a3b8', fontWeight: 'bold', fontSize: '14px' },
-  question: { fontSize: '24px', color: '#1e293b', lineHeight: '1.5', marginBottom: '30px', fontWeight: 'bold' },
-  footer: { color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '20px', fontSize: '14px' }
+  badgeBlue: { backgroundColor: '#dbeafe', color: '#1e40af', padding: '5px 15px', borderRadius: '20px', fontWeight: 'bold' },
+  idLabel: { color: '#94a3b8', fontWeight: 'bold' },
+  question: { fontSize: '24px', color: '#1e293b', lineHeight: '1.5', marginBottom: '30px' },
+  footer: { color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '20px' },
+  center: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }
 };
