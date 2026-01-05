@@ -1,17 +1,17 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeCanvas } from 'qrcode.react';
-import confetti from 'canvas-confetti'; // ต้องลง npm install canvas-confetti
+import confetti from 'canvas-confetti';
 
-export default function EnhancedSalesJigsaw() {
+export default function BeautifulSalesJigsaw() {
     const [gameState, setGameState] = useState('start'); // start, playing, won
     const [matchedIds, setMatchedIds] = useState([]);
     const [shuffledObjections, setShuffledObjections] = useState([]);
     const [shuffledAnswers, setShuffledAnswers] = useState([]);
     const [score, setScore] = useState(0);
-    const [wrongId, setWrongId] = useState(null); // สำหรับทำเอฟเฟกต์สั่นตอนตอบผิด
+    const [wrongId, setWrongId] = useState(null);
     const [showQR, setShowQR] = useState(false);
 
     const pairs = [
@@ -42,124 +42,107 @@ export default function EnhancedSalesJigsaw() {
     };
 
     const handleDragEnd = (event, info, draggedId) => {
-        let foundTarget = false;
-
-        shuffledObjections.forEach((obj) => {
-            const el = document.getElementById(`target-${obj.id}`);
-            if (el) {
-                const rect = el.getBoundingClientRect();
-                const { x, y } = info.point;
-
-                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-                    foundTarget = true;
-                    if (obj.id === draggedId) {
-                        // ถูกต้อง!
-                        setMatchedIds(prev => [...prev, draggedId]);
-                        setScore(prev => {
-                            const newScore = prev + 1;
-                            if (newScore === pairs.length) triggerWin();
-                            return newScore;
-                        });
-                        playSound(pairs.find(p => p.id === draggedId).aAudio);
-                    } else {
-                        // ผิดคู่!
-                        setWrongId(draggedId);
-                        setTimeout(() => setWrongId(null), 500);
-                        // playSound('/audio/wrong.mp3'); // ถ้ามีไฟล์เสียงผิด
+        const x = info.point.x;
+        const y = info.point.y;
+        const targetElement = document.elementFromPoint(x, y);
+        const targetBox = targetElement?.closest('.target-box');
+        
+        if (targetBox) {
+            const targetId = parseInt(targetBox.getAttribute('data-id'));
+            if (targetId === draggedId) {
+                // ✅ ถูกต้อง
+                setMatchedIds(prev => [...prev, draggedId]);
+                setScore(prev => {
+                    const newScore = prev + 1;
+                    if (newScore === pairs.length) {
+                        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                        setTimeout(() => setGameState('won'), 1000);
                     }
-                }
+                    return newScore;
+                });
+                playSound(pairs.find(p => p.id === draggedId).aAudio);
+            } else {
+                // ❌ ผิดคู่
+                setWrongId(draggedId);
+                setTimeout(() => setWrongId(null), 500);
             }
-        });
-    };
-
-    const triggerWin = () => {
-        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#60a5fa', '#10b981', '#fbbf24'] });
-        setTimeout(() => setGameState('won'), 1000);
-    };
-
-    // Animation Variants
-    const shakeVariants = {
-        shake: { x: [0, -10, 10, -10, 10, 0], transition: { duration: 0.4 }, backgroundColor: "#ef4444" }
+        }
     };
 
     return (
         <div className="game-wrapper">
             <style jsx global>{`
                 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
-                body { background: #020617; font-family: 'Sarabun', sans-serif; color: white; overflow-x: hidden; }
+                body { background: #020617; font-family: 'Sarabun', sans-serif; color: white; margin: 0; overflow-x: hidden; }
                 .game-wrapper { min-height: 100vh; background: radial-gradient(circle at top, #1e293b 0%, #020617 100%); padding: 20px; }
-                .glass { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; }
-                .jigsaw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; max-width: 900px; margin: 0 auto; }
-                .card-item { min-height: 85px; padding: 15px; border-radius: 16px; display: flex; align-items: center; transition: all 0.3s ease; font-size: 0.9rem; position: relative; }
-                .obj-card { background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%); border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-                .ans-card { background: rgba(255,255,255,0.05); border: 2px dashed rgba(255,255,255,0.2); cursor: grab; touch-action: none; }
-                .matched-status { background: #059669 !important; border: none !important; opacity: 0.8; }
-                .play-icon { width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0; }
-                @media (max-width: 600px) { .card-item { font-size: 0.75rem; padding: 10px; min-height: 70px; } .jigsaw-grid { gap: 10px; } }
+                .glass-card { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; }
+                .jigsaw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; max-width: 950px; margin: 0 auto; }
+                .card-item { min-height: 85px; padding: 15px; border-radius: 16px; display: flex; align-items: center; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); font-size: 0.9rem; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+                .obj-card { background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%); border: 1px solid rgba(255,255,255,0.1); }
+                .ans-card { background: rgba(255,255,255,0.07); border: 2px dashed rgba(255,255,255,0.2); cursor: grab; touch-action: none; }
+                .is-matched { background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important; border: none !important; box-shadow: 0 0 20px rgba(16, 185, 129, 0.4); }
+                .play-icon { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0; cursor: pointer; }
+                @media (max-width: 600px) { .card-item { font-size: 0.78rem; padding: 10px; min-height: 75px; } .jigsaw-grid { gap: 10px; } }
             `}</style>
-
+            
             <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
 
-            {/* หน้าเริ่มเกม */}
+            {/* หน้าเริ่มเกม (สวยงาม) */}
             <AnimatePresence>
                 {gameState === 'start' && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center py-5">
-                        <motion.div initial={{ y: 20 }} animate={{ y: 0 }} className="glass p-5 d-inline-block shadow-lg">
-                            <i className="bi bi-puzzle text-info" style={{ fontSize: '4rem' }}></i>
-                            <h1 className="display-5 fw-bold mt-3">Sales Jigsaw</h1>
-                            <p className="opacity-75 mb-4">ฝึกรับมือข้อโต้แย้งลูกค้าให้เป็นมืออาชีพ</p>
-                            <button onClick={() => setGameState('playing')} className="btn btn-primary btn-lg px-5 rounded-pill shadow-sm">เริ่มเล่นเลย</button>
-                        </motion.div>
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="text-center py-5">
+                        <div className="glass-card p-5 d-inline-block shadow-lg">
+                            <div className="display-4 text-info mb-3"><i className="bi bi-puzzle-fill"></i></div>
+                            <h1 className="fw-bold mb-2">Sales Jigsaw</h1>
+                            <p className="opacity-75 mb-4">พิชิตข้อโต้แย้งอย่างมือโปร</p>
+                            <button onClick={() => setGameState('playing')} className="btn btn-primary btn-lg px-5 rounded-pill shadow-glow">เริ่มเล่นเลย</button>
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
             {/* หน้าเล่นเกม */}
             {gameState === 'playing' && (
-                <div className="container">
-                    <div className="d-flex justify-content-between align-items-center mb-4">
-                        <div className="glass px-3 py-2">
-                            <span className="text-info fw-bold">คะแนน: {score} / 10</span>
+                <div className="container-fluid">
+                    <div className="text-center mb-4">
+                        <div className="d-flex justify-content-between align-items-center max-width-950 mx-auto mb-3">
+                            <div className="glass-card px-4 py-1 fw-bold text-info">คะแนน: {score} / 10</div>
+                            <button className="btn btn-link text-white text-decoration-none" onClick={() => setShowQR(true)}>
+                                <i className="bi bi-qr-code"></i> แชร์
+                            </button>
                         </div>
-                        <button className="btn btn-outline-light btn-sm rounded-pill" onClick={() => setShowQR(true)}>
-                            <i className="bi bi-qr-code"></i> แชร์
-                        </button>
                     </div>
 
                     <div className="jigsaw-grid">
-                        {/* ฝั่งคำถาม */}
                         <div className="d-flex flex-column gap-3">
                             {shuffledObjections.map((item) => (
-                                <div key={`obj-${item.id}`} id={`target-${item.id}`} 
-                                     className={`card-item obj-card ${matchedIds.includes(item.id) ? 'matched-status' : ''}`}>
-                                    <div className="play-icon" onClick={() => playSound(item.qAudio)}><i className="bi bi-volume-up"></i></div>
-                                    <div className="fw-semibold">{item.q}</div>
+                                <div key={`obj-${item.id}`} data-id={item.id}
+                                     className={`card-item obj-card target-box ${matchedIds.includes(item.id) ? 'is-matched' : ''}`}>
+                                    <div className="play-icon" onClick={() => playSound(item.qAudio)}><i className="bi bi-volume-up-fill"></i></div>
+                                    <div className="fw-bold text-white">{item.q}</div>
                                 </div>
                             ))}
                         </div>
 
-                        {/* ฝั่งคำตอบ */}
                         <div className="d-flex flex-column gap-3">
                             {shuffledAnswers.map((item) => (
-                                <div key={`ans-wrap-${item.id}`} style={{ minHeight: '85px' }}>
+                                <div key={`ans-container-${item.id}`} style={{ minHeight: '85px' }}>
                                     {!matchedIds.includes(item.id) ? (
                                         <motion.div 
                                             drag 
                                             dragSnapToOrigin 
                                             onDragEnd={(e, info) => handleDragEnd(e, info, item.id)}
-                                            animate={wrongId === item.id ? "shake" : ""}
-                                            variants={shakeVariants}
-                                            whileHover={{ scale: 1.02 }}
-                                            whileDrag={{ scale: 1.1, zIndex: 100, boxShadow: "0 20px 40px rgba(0,0,0,0.5)" }}
+                                            animate={wrongId === item.id ? { x: [-10, 10, -10, 10, 0], backgroundColor: "#ef4444" } : { backgroundColor: "rgba(255, 255, 255, 0.07)" }}
+                                            whileDrag={{ scale: 1.08, zIndex: 1000, boxShadow: "0 20px 40px rgba(0,0,0,0.5)" }}
                                             className="card-item ans-card"
                                         >
-                                            <div className="play-icon" onClick={() => playSound(item.aAudio)}><i className="bi bi-play-fill"></i></div>
-                                            <div>{item.a}</div>
+                                            <div className="play-icon" onClick={() => playSound(item.aAudio)}><i className="bi bi-play-circle-fill"></i></div>
+                                            <div className="text-white-50">{item.a}</div>
                                         </motion.div>
                                     ) : (
-                                        <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="card-item matched-status shadow-glow">
-                                            <i className="bi bi-check-circle-fill me-2 text-warning"></i>
-                                            <span className="opacity-75">{item.a}</span>
+                                        <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="card-item is-matched">
+                                            <i className="bi bi-check-all me-2 fs-4"></i>
+                                            <div className="small opacity-75">{item.a}</div>
                                         </motion.div>
                                     )}
                                 </div>
@@ -169,15 +152,15 @@ export default function EnhancedSalesJigsaw() {
                 </div>
             )}
 
-            {/* หน้าชนะเกม */}
+            {/* หน้าจบเกม (สรุปผล) */}
             <AnimatePresence>
                 {gameState === 'won' && (
-                    <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-5">
-                        <div className="glass p-5 d-inline-block border-success">
-                            <h1 className="text-warning display-3 mb-3"><i className="bi bi-trophy-fill"></i></h1>
-                            <h2 className="fw-bold mb-3">คุณคือสุดยอดนักขาย!</h2>
-                            <p className="mb-4">จับคู่ข้อโต้แย้งได้ถูกต้องครบถ้วน 10/10</p>
-                            <button onClick={() => setGameState('playing')} className="btn btn-success btn-lg rounded-pill px-5">เล่นอีกครั้ง</button>
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="position-fixed inset-0 d-flex align-items-center justify-content-center" style={{zIndex: 3000, top: 0, left:0, width:'100%', height:'100%', background:'rgba(2, 6, 23, 0.9)'}}>
+                        <div className="glass-card p-5 text-center border-success shadow-lg" style={{maxWidth: '400px'}}>
+                            <div className="display-1 text-warning mb-3"><i className="bi bi-trophy"></i></div>
+                            <h2 className="fw-bold text-white">ยินดีด้วย!</h2>
+                            <p className="opacity-75 mb-4">คุณจับคู่ข้อโต้แย้งได้ถูกต้องครบถ้วน!</p>
+                            <button onClick={() => window.location.reload()} className="btn btn-success btn-lg w-100 rounded-pill">เล่นใหม่อีกครั้ง</button>
                         </div>
                     </motion.div>
                 )}
@@ -186,15 +169,13 @@ export default function EnhancedSalesJigsaw() {
             {/* QR Modal */}
             <AnimatePresence>
                 {showQR && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} 
-                                onClick={() => setShowQR(false)} className="position-fixed inset-0 d-flex align-items-center justify-content-center px-3" 
-                                style={{ background: 'rgba(0,0,0,0.9)', zIndex: 2000, top: 0, left: 0, right: 0, bottom: 0 }}>
+                    <div className="position-fixed inset-0 d-flex align-items-center justify-content-center px-3" style={{ background: 'rgba(0,0,0,0.9)', zIndex: 4000, top: 0, left:0, width:'100%', height:'100%' }} onClick={() => setShowQR(false)}>
                         <div className="bg-white p-4 rounded-4 text-center text-dark" onClick={e => e.stopPropagation()}>
-                            <h5 className="fw-bold mb-3">ชวนเพื่อนมาประลอง!</h5>
+                            <h5 className="fw-bold mb-3">สแกนเพื่อส่งต่อความรู้</h5>
                             <QRCodeCanvas value={typeof window !== 'undefined' ? window.location.href : ''} size={200} />
-                            <button className="btn btn-dark w-100 mt-4 rounded-pill" onClick={() => setShowQR(false)}>ปิดหน้าต่าง</button>
+                            <button className="btn btn-dark w-100 mt-4 rounded-pill" onClick={() => setShowQR(false)}>ปิด</button>
                         </div>
-                    </motion.div>
+                    </div>
                 )}
             </AnimatePresence>
         </div>
