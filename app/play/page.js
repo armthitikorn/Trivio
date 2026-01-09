@@ -1,4 +1,5 @@
 'use client'
+
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
@@ -19,18 +20,16 @@ function JoinPortalContent() {
     if (urlPin) setPin(urlPin)
   }, [searchParams])
 
-  // ✨ ฟังก์ชันจัดการการเข้าห้องสอบ
   const handleJoin = async (e) => {
-    e.preventDefault(); // ป้องกันหน้าเว็บ Refresh ตัวเอง
+    e.preventDefault();
     
     if (!pin || pin.length < 6) return alert("กรุณากรอก PIN 6 หลัก")
     if (!employeeId || !nickname) return alert("กรุณากรอกข้อมูลพนักงานให้ครบ")
     
     setLoading(true)
-    console.log("กำลังตรวจสอบ PIN:", pin)
 
     try {
-      // 1. ดึงข้อมูลจาก Supabase (เช็คทั้ง ID และ Category)
+      // 1. ตรวจสอบ PIN ในฐานข้อมูล
       const { data: session, error } = await supabase
         .from('game_sessions')
         .select('id, category, is_active') 
@@ -38,30 +37,25 @@ function JoinPortalContent() {
         .single()
 
       if (error || !session) {
-        console.error("Supabase Error:", error)
-        alert("❌ ไม่พบ PIN นี้ หรือรหัสผิด (โปรดตรวจสอบในตาราง game_sessions)")
+        alert("❌ ไม่พบรหัส PIN นี้ กรุณาตรวจสอบอีกครั้ง")
         setLoading(false)
         return
       }
 
-      console.log("พบห้องสอบ:", session)
-
-      // 2. บันทึกข้อมูลลง LocalStorage
+      // 2. บันทึกข้อมูลพนักงานลงเครื่อง (LocalStorage) ไว้ใช้ในหน้าถัดไป
       const playerData = { employeeId, nickname, department, level }
       localStorage.setItem('temp_player_info', JSON.stringify(playerData))
 
-      // 3. ✨ ระบบนำทาง (Redirect Logic) ✨
-      // ตรวจสอบว่า Category ตรงกับที่เทรนเนอร์สร้างไหม
+      // 3. ✨ ส่งพนักงานไปหน้าทำข้อสอบตาม Category
       if (session.category === 'AudioArena') {
-        console.log("ไปที่หน้าโจทย์เสียง...");
         router.push(`/play/audio/${session.id}`);
       } else {
-        console.log("ไปที่หน้าควิซปกติ...");
+        // วิ่งไปที่หน้าปรนัยที่เราเพิ่งแก้เรื่องคะแนนกันครับ
         router.push(`/play/quiz-practice/${session.id}`);
       }
 
     } catch (err) {
-      console.error("Catch Error:", err)
+      console.error("Join Error:", err)
       setLoading(false)
     }
   }
@@ -85,7 +79,7 @@ function JoinPortalContent() {
 
           <hr style={{ border: '1px solid #eee', margin: '10px 0' }} />
 
-          <p style={s.labelTag}>รหัสพนักงาน / ชื่อเล่น</p>
+          <p style={s.labelTag}>ข้อมูลพนักงาน</p>
           <input 
             type="text" placeholder="รหัสพนักงาน" value={employeeId}
             onChange={(e) => setEmployeeId(e.target.value)} style={s.inputSmall}
@@ -95,18 +89,19 @@ function JoinPortalContent() {
             onChange={(e) => setNickname(e.target.value)} style={s.inputSmall}
           />
 
-          <p style={s.labelTag}>แผนก / ระดับ</p>
-          <select value={department} onChange={(e) => setDepartment(e.target.value)} style={s.select}>
-            <option value="">เลือกแผนก</option>
-            <option value="DMTM">ฝ่ายขาย Tele</option>
-            <option value="Agent">ตัวแทน</option>
-          </select>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <select value={department} onChange={(e) => setDepartment(e.target.value)} style={s.select}>
+              <option value="">เลือกแผนก</option>
+              <option value="DMTM">ฝ่ายขาย Tele</option>
+              <option value="Agent">ตัวแทน</option>
+            </select>
 
-          <select value={level} onChange={(e) => setLevel(e.target.value)} style={s.select}>
-            <option value="">เลือกระดับ</option>
-            <option value="Nursery">Nursery</option>
-            <option value="Rising Star">Rising Star</option>
-          </select>
+            <select value={level} onChange={(e) => setLevel(e.target.value)} style={s.select}>
+              <option value="">เลือกระดับ</option>
+              <option value="Nursery">Nursery</option>
+              <option value="Rising Star">Rising Star</option>
+            </select>
+          </div>
 
           <button type="submit" disabled={loading} style={s.btnPrimary}>
             {loading ? 'กำลังเข้าระบบ...' : '🚀 เริ่มทำแบบทดสอบ'}
@@ -119,21 +114,21 @@ function JoinPortalContent() {
 
 export default function PlayerJoinPortal() {
   return (
-    <Suspense fallback={<div>กำลังโหลด...</div>}>
+    <Suspense fallback={<div style={{textAlign:'center', padding:'50px'}}>กำลังโหลดหน้าลงทะเบียน...</div>}>
       <JoinPortalContent />
     </Suspense>
   )
 }
 
 const s = {
-  container: { minHeight: '100vh', background: '#f0f2f5', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' },
-  card: { background: 'white', padding: '40px 30px', borderRadius: '35px', boxShadow: '0 20px 50px rgba(0,0,0,0.15)', textAlign: 'center', width: '100%', maxWidth: '450px', border: '2px solid #ddd' },
-  logoBox: { background: '#2d3436', color: 'white', padding: '8px 20px', borderRadius: '50px', display: 'inline-block', fontWeight: '900', fontSize: '0.9rem', marginBottom: '10px' },
-  title: { color: '#000000', margin: '10px 0 25px 0', fontSize: '2rem', fontWeight: '900' },
-  labelTag: { textAlign: 'left', fontSize: '1rem', fontWeight: '900', color: '#1a1a1a', marginBottom: '5px', marginLeft: '5px' },
+  container: { minHeight: '100vh', background: '#f0f2f5', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', fontFamily: 'sans-serif' },
+  card: { background: 'white', padding: '40px 30px', borderRadius: '35px', boxShadow: '0 20px 50px rgba(0,0,0,0.1)', textAlign: 'center', width: '100%', maxWidth: '450px', border: '1px solid #ddd' },
+  logoBox: { background: '#2d3436', color: 'white', padding: '8px 20px', borderRadius: '50px', display: 'inline-block', fontWeight: '900', fontSize: '0.8rem', marginBottom: '15px' },
+  title: { color: '#000', margin: '0 0 25px 0', fontSize: '1.8rem', fontWeight: '900' },
+  labelTag: { textAlign: 'left', fontSize: '0.9rem', fontWeight: '900', color: '#333', marginBottom: '5px', marginLeft: '5px' },
   formGrid: { display: 'flex', flexDirection: 'column', gap: '15px' },
-  inputPin: { width: '100%', padding: '18px', fontSize: '2.5rem', textAlign: 'center', letterSpacing: '8px', borderRadius: '20px', border: '3px solid #6f42c1', background: '#f8f9ff', color: '#000', fontWeight: '900', boxSizing: 'border-box' },
-  inputSmall: { width: '100%', padding: '16px', fontSize: '1.2rem', borderRadius: '15px', border: '2px solid #1a1a1a', color: '#000', fontWeight: '800', boxSizing: 'border-box' },
-  select: { width: '100%', padding: '16px', fontSize: '1.2rem', borderRadius: '15px', border: '2px solid #1a1a1a', background: 'white', color: '#000', fontWeight: '800' },
-  btnPrimary: { width: '100%', padding: '22px', background: '#000', color: '#fff', border: 'none', borderRadius: '20px', fontSize: '1.4rem', fontWeight: '900', cursor: 'pointer', marginTop: '10px' }
+  inputPin: { width: '100%', padding: '15px', fontSize: '2.2rem', textAlign: 'center', letterSpacing: '8px', borderRadius: '15px', border: '2px solid #6f42c1', background: '#f8f9ff', color: '#000', fontWeight: '900', boxSizing: 'border-box' },
+  inputSmall: { width: '100%', padding: '14px', fontSize: '1rem', borderRadius: '12px', border: '1px solid #ddd', boxSizing: 'border-box' },
+  select: { width: '100%', padding: '14px', fontSize: '1rem', borderRadius: '12px', border: '1px solid #ddd', background: 'white' },
+  btnPrimary: { width: '100%', padding: '18px', background: '#000', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '1.2rem', fontWeight: '900', cursor: 'pointer', marginTop: '10px' }
 }
