@@ -1,10 +1,11 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
-export default function SoloQuizGame() {
-  const { id } = useParams() 
+function SoloQuizContent() {
+  const searchParams = useSearchParams()
+  const quizId = searchParams.get('quizId') // ✨ ดึงรหัสจาก QR Code เดิม (?quizId=...)
   const router = useRouter()
 
   const [questions, setQuestions] = useState([])
@@ -16,30 +17,21 @@ export default function SoloQuizGame() {
   const [gameStarted, setGameStarted] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  // --- 1. แก้ไข useEffect เพื่อดักจับค่า ID ที่ยังไม่พร้อม ---
+  // โหลดข้อมูลข้อสอบจาก quizId ที่ได้จาก QR
   useEffect(() => {
-    if (id && id !== '[id]') {
-      fetchQuestions()
-    }
-  }, [id])
+    if (quizId) fetchQuestions()
+  }, [quizId])
 
   async function fetchQuestions() {
     try {
-      const { data: session } = await supabase
-        .from('game_sessions')
-        .select('quiz_id')
-        .eq('id', id)
-        .single()
-
-      if (session) {
-        const { data: qs } = await supabase
-          .from('questions')
-          .select('*')
-          .eq('quiz_id', session.quiz_id)
-          .order('created_at', { ascending: true })
-        
-        if (qs) setQuestions(qs)
-      }
+      const { data: qs, error } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('quiz_id', quizId)
+        .order('created_at', { ascending: true })
+      
+      if (qs) setQuestions(qs)
+      if (error) throw error
     } catch (err) {
       console.error("Fetch Error:", err.message)
     }
@@ -48,27 +40,10 @@ export default function SoloQuizGame() {
   async function startGame() {
     if (!nickname) return alert("กรุณาระบุชื่อเล่นก่อนเริ่มนะครับ");
     setLoading(true)
-    const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
-    
-    const { error } = await supabase.from('players').insert([{ 
-      session_id: id, 
-      nickname: nickname || savedInfo.nickname || 'Unknown', 
-      employee_id: savedInfo.employeeId,
-      department: savedInfo.department,
-      level: savedInfo.level,
-      score: 0 
-    }])
-    
-    if (error) {
-      console.error("Error saving player:", error)
-      alert("เกิดข้อผิดพลาดในการลงทะเบียน")
-    } else {
-      setGameStarted(true)
-    }
+    setGameStarted(true)
     setLoading(false)
   }
 
-  // --- 2. แก้ไขตรรกะการตรวจคำตอบ (correct_option) ---
   async function handleAnswer(selectedLabel) {
     if (answered) return;
     setAnswered(true);
@@ -76,7 +51,7 @@ export default function SoloQuizGame() {
     const currentQ = questions[currentIndex];
     let newScore = score;
 
-    // ✨ เปลี่ยนจาก correct_answer เป็น correct_option ให้ตรงกับหลังบ้าน
+    // ✅ แก้ไขตรรกะคะแนน: ใช้ correct_option ให้คะแนนไม่เป็น 0
     if (selectedLabel === currentQ.correct_option) {
       newScore = score + 1;
       setScore(newScore);
@@ -87,30 +62,20 @@ export default function SoloQuizGame() {
         setCurrentIndex(currentIndex + 1);
         setAnswered(false);
       } else {
-        await saveFinalScore(newScore);
+        setIsFinished(true);
       }
     }, 500);
   }
 
-  async function saveFinalScore(finalScore) {
-    const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
-    await supabase
-      .from('players')
-      .update({ score: finalScore })
-      .eq('session_id', id)
-      .eq('nickname', nickname) // ใช้ nickname จาก state ล่าสุด
-
-    setIsFinished(true)
-  }
-
-  // --- ส่วนการแสดงผล (UI เดิมที่คุณชอบ) ---
+  // --- UI: หน้าแรก (สไตล์ที่คุณชอบ) ---
   if (!gameStarted) {
     return (
       <div style={s.container}>
         <div style={s.card}>
             <h1 style={{color: '#1a1a1a', marginBottom: '20px'}}>📝 แบบทดสอบพนักงาน</h1>
+            <p style={{color: '#666', marginBottom: '20px'}}>สแกนจาก QR Code สำเร็จ! กรุณาใส่ชื่อเพื่อเริ่มครับ</p>
             <input style={s.input} placeholder="ระบุชื่อเล่นของคุณ" value={nickname} onChange={e => setNickname(e.target.value)} />
-            <button onClick={startGame} disabled={loading} style={s.btnPrimary}>
+            <button onClick={startGame} disabled={loading || questions.length === 0} style={s.btnPrimary}>
                 {loading ? 'กำลังเข้าสู่ระบบ...' : 'เริ่มทำข้อสอบ'}
             </button>
         </div>
@@ -118,6 +83,7 @@ export default function SoloQuizGame() {
     )
   }
 
+  // --- UI: หน้าจบเกม ---
   if (isFinished) {
     return (
       <div style={s.container}>
@@ -128,7 +94,7 @@ export default function SoloQuizGame() {
             <p style={{fontWeight: 'bold', color: '#666'}}>คะแนนที่คุณทำได้</p>
             <h1 style={{fontSize:'4rem', color:'#6f42c1', margin: '10px 0'}}>{score} / {questions.length}</h1>
           </div>
-          <button onClick={() => router.push('/play')} style={s.btnBack}>กลับหน้าแรก</button>
+          <button onClick={() => window.location.reload()} style={s.btnBack}>ทำอีกครั้ง</button>
         </div>
       </div>
     )
@@ -171,7 +137,16 @@ export default function SoloQuizGame() {
   )
 }
 
-// --- Styles เดิม (คงความคมชัดที่คุณชอบ) ---
+// --- ฟังก์ชันหลัก (ต้องห่อ Suspense เพราะใช้ useSearchParams) ---
+export default function SoloQuizGame() {
+  return (
+    <Suspense fallback={<div style={{padding:'50px', textAlign:'center'}}>กำลังเตรียมข้อสอบ...</div>}>
+      <SoloQuizContent />
+    </Suspense>
+  )
+}
+
+// --- Styles (คงความคมชัดและสวยงามเดิม) ---
 const s = {
   container: { minHeight: '100vh', background: '#f0f2f5', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', fontFamily: "'Inter', sans-serif" },
   card: { background: 'white', padding: '40px', borderRadius: '25px', textAlign: 'center', width: '100%', maxWidth: '400px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' },
