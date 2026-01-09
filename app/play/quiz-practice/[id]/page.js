@@ -1,154 +1,99 @@
 'use client'
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { useSearchParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 
-function VideoArenaContent() {
-  const searchParams = useSearchParams()
-  const targetId = searchParams.get('id')
+function SoloQuizContent() {
+  const { id } = useParams()
+  const router = useRouter()
 
-  const [questions, setQuestions] = useState([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [stream, setStream] = useState(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordedChunks, setRecordedChunks] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const [fullName, setFullName] = useState('');
-  const [playerLevel, setPlayerLevel] = useState('Nursery');
-  const [isStarted, setIsStarted] = useState(false);
-  
-  const videoPreviewRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
+  // --- States Management ---
+  const [questions, setQuestions] = useState([])
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [answered, setAnswered] = useState(false)
+  const [score, setScore] = useState(0)
+  const [isFinished, setIsFinished] = useState(false)
+  const [nickname, setNickname] = useState('')
+  const [isStarted, setIsStarted] = useState(false)
+  const [loading, setLoading] = useState(false)
 
-  useEffect(() => { 
-    fetchQuestions(); 
-  }, [targetId]);
-  
+  // --- Data Fetching ---
   useEffect(() => {
-    if (stream && videoPreviewRef.current) {
-      videoPreviewRef.current.srcObject = stream;
+    if (id) fetchQuestions()
+    const saved = localStorage.getItem('temp_player_info')
+    if (saved) {
+      const info = JSON.parse(saved)
+      if (info.nickname) setNickname(info.nickname)
     }
-  }, [stream]);
+  }, [id])
 
   async function fetchQuestions() {
     try {
-      let query = supabase.from('video_questions').select('*');
-      if (targetId) query = query.eq('id', targetId);
-      const { data, error } = await query;
-      if (data) setQuestions(data);
-    } catch (err) { console.error(err); }
+      const { data, error } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('quiz_id', id)
+        .order('created_at', { ascending: true })
+      
+      if (data) setQuestions(data)
+      if (error) throw error
+    } catch (err) {
+      console.error("Fetch Error:", err.message)
+    }
   }
 
-  const startCamera = async () => {
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: { ideal: 720 }, height: { ideal: 1280 }, facingMode: "user" }, 
-        audio: true 
-      });
-      setStream(s);
-    } catch (err) { alert("กรุณาเปิดการเข้าถึงกล้องและไมโครโฟนเพื่อความสนุกในการร่วมกิจกรรมครับ"); }
-  };
+  // --- Game Logic ---
+  const handleStart = () => {
+    if (!nickname) return alert("กรุณาระบุชื่อของคุณก่อนเข้าสู่สนามสอบครับ")
+    setIsStarted(true)
+  }
 
-  const getSupportedMimeType = () => {
-    const types = ['video/mp4', 'video/webm;codecs=vp8,opus', 'video/quicktime'];
-    return types.find(type => MediaRecorder.isTypeSupported(type)) || '';
-  };
+  const handleAnswer = (selectedLabel) => {
+    if (answered) return
+    setAnswered(true)
 
-  const startRecording = () => {
-    setRecordedChunks([]);
-    const mimeType = getSupportedMimeType();
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) setRecordedChunks(prev => [...prev, e.data]);
-    };
-    recorder.start(1000);
-    mediaRecorderRef.current = recorder;
-    setIsRecording(true);
-  };
+    const currentQ = questions[currentIndex]
+    let newScore = score
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current) mediaRecorderRef.current.stop();
-    setIsRecording(false);
-  };
-
-  const handleUpload = async () => {
-    if (!fullName || fullName.trim().length < 4) return alert("กรุณาระบุชื่อ-นามสกุลจริงด้วยนะครับ");
-    setUploading(true);
-    
-    try {
-      const mimeType = getSupportedMimeType();
-      const blob = new Blob(recordedChunks, { type: mimeType });
-      const extension = mimeType.includes('mp4') || mimeType.includes('quicktime') ? 'mp4' : 'webm';
-      
-      // ✅ ล้างชื่อไฟล์ (ห้ามภาษาไทย) เพื่อป้องกัน Invalid Key
-      const safeFileName = `ans_${Date.now()}_${Math.floor(Math.random() * 1000)}.${extension}`;
-      const storagePath = `answers/${safeFileName}`;
-
-      const { error: upError } = await supabase.storage
-        .from('video_training')
-        .upload(storagePath, blob);
-
-      if (upError) throw upError;
-
-      const { error: insError } = await supabase.from('video_answers').insert([{ 
-        question_id: questions[currentIndex].id, 
-        nickname: fullName, 
-        player_level: playerLevel,
-        video_answer_url: storagePath,
-        status: 'pending'
-      }]);
-
-      if (insError) throw insError;
-
-      alert("🎉 สุดยอด! ผลงานของคุณถูกส่งเข้าระบบเรียบร้อยแล้ว");
-      if (currentIndex < questions.length - 1) {
-        setCurrentIndex(prev => prev + 1);
-        setRecordedChunks([]); 
-      } else {
-        window.location.reload();
-      }
-    } catch (err) {
-      alert("Error: " + err.message);
-    } finally {
-      setUploading(false);
+    // ✅ FIXED: เทียบค่า label (A,B,C,D) กับ correct_option จาก Database
+    if (selectedLabel === currentQ.correct_option) {
+      newScore = score + 1
+      setScore(newScore)
     }
-  };
+
+    // Effect ก่อนเปลี่ยนข้อ
+    setTimeout(() => {
+      if (currentIndex + 1 < questions.length) {
+        setCurrentIndex(currentIndex + 1)
+        setAnswered(false)
+      } else {
+        setIsFinished(true)
+      }
+    }, 600)
+  }
 
   // --- UI: Welcome Screen ---
   if (!isStarted) {
     return (
-      <div style={styles.pageBackground}>
+      <div style={styles.pageBg}>
         <div style={styles.container}>
           <div style={styles.glassCard}>
-            <div style={styles.emojiHero}>🚀</div>
-            <h1 style={styles.mainTitle}>TRIVIO <span style={{color: '#6366f1'}}>ARENA</span></h1>
-            <p style={styles.subTitle}>ปลดล็อกทักษะของคุณผ่านภารกิจวิดีโอ</p>
+            <div style={styles.heroEmoji}>🎖️</div>
+            <h1 style={styles.mainTitle}>TRIVIO <span style={{color:'#6366f1'}}>QUIZ</span></h1>
+            <p style={styles.subTitle}>สนามทดสอบทักษะและความรู้พนักงาน</p>
             
-            <div style={styles.formGroup}>
-              <label style={styles.label}>ชื่อจริง - นามสกุล</label>
+            <div style={styles.inputBox}>
+              <label style={styles.label}>ระบุชื่อผู้เข้าทดสอบ</label>
               <input 
                 style={styles.input} 
-                placeholder="กรอกชื่อเพื่อเริ่มภารกิจ..." 
-                value={fullName} 
-                onChange={(e) => setFullName(e.target.value)} 
+                placeholder="ชื่อ-นามสกุล ของคุณ..." 
+                value={nickname} 
+                onChange={(e) => setNickname(e.target.value)} 
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>ระดับความท้าทาย</label>
-              <select style={styles.select} value={playerLevel} onChange={(e)=>setPlayerLevel(e.target.value)}>
-                <option value="Nursery">🍼 Nursery (เริ่มต้น)</option>
-                <option value="Rising Star">⭐ Rising Star (ดาวรุ่ง)</option>
-                <option value="Legend">🏆 Legend (ตำนาน)</option>
-              </select>
-            </div>
-
-            <button 
-              disabled={!fullName || questions.length === 0} 
-              onClick={() => setIsStarted(true)} 
-              style={{...styles.primaryBtn, opacity: (!fullName || questions.length === 0) ? 0.6 : 1}}
-            >
-              {questions.length === 0 ? 'กำลังเตรียมสนาม...' : 'เริ่มภารกิจเลย!'}
+            <button onClick={handleStart} style={styles.startBtn}>
+              {questions.length === 0 ? 'กำลังเตรียมโจทย์...' : 'เริ่มทำข้อสอบ'}
             </button>
           </div>
         </div>
@@ -156,59 +101,61 @@ function VideoArenaContent() {
     )
   }
 
-  // --- UI: Mission Arena ---
-  const currentQuestion = questions[currentIndex];
-
-  return (
-    <div style={styles.pageBackground}>
-      <div style={styles.container}>
-        {/* โจทย์ Card */}
-        <div style={styles.missionCard}>
-          <div style={styles.topHeader}>
-            <span style={styles.missionBadge}>MISSION {currentIndex + 1}/{questions.length}</span>
-            <span style={styles.levelBadge}>{playerLevel}</span>
-          </div>
-          <h2 style={styles.questionText}>โจทย์: {currentQuestion?.title}</h2>
-          <div style={styles.videoPlayerBox}>
-            <video controls playsInline style={styles.fullVideo} 
-              src={currentQuestion ? supabase.storage.from('video_training').getPublicUrl(currentQuestion.video_url).data.publicUrl : ''} 
-            />
+  // --- UI: Finished Screen ---
+  if (isFinished) {
+    return (
+      <div style={styles.pageBg}>
+        <div style={styles.container}>
+          <div style={styles.glassCard}>
+            <div style={styles.heroEmoji}>🎉</div>
+            <h1 style={styles.mainTitle}>ภารกิจเสร็จสิ้น!</h1>
+            <div style={styles.resultBox}>
+              <p style={{margin:0, color:'#64748b', fontWeight:'bold'}}>คะแนนที่คุณทำได้</p>
+              <h1 style={styles.finalScore}>{score} <span style={{fontSize:'1.5rem', color:'#94a3b8'}}>/ {questions.length}</span></h1>
+            </div>
+            <button onClick={() => window.location.reload()} style={styles.startBtn}>ทำแบบทดสอบอีกครั้ง</button>
           </div>
         </div>
+      </div>
+    )
+  }
 
-        {/* การบันทึก Card */}
-        <div style={styles.recordingCard}>
-          <h3 style={styles.cardTitle}>🤳 บันทึกผลงานของคุณ</h3>
-          <div style={{...styles.videoPlayerBox, border: isRecording ? '4px solid #ef4444' : '4px solid #f1f5f9'}}>
-            {!stream ? (
-              <div style={styles.cameraPlaceholder}>
-                <button onClick={startCamera} style={styles.cameraStartBtn}>📸 เปิดกล้อง</button>
-              </div>
-            ) : (
-              <div style={{position:'relative', height:'100%'}}>
-                <video ref={videoPreviewRef} autoPlay muted playsInline style={{...styles.fullVideo, transform:'scaleX(-1)'}} />
-                {isRecording && (
-                  <div style={styles.recIndicator}>
-                    <div style={styles.redDot}></div>
-                    <span style={styles.recText}>RECORDING</span>
-                  </div>
-                )}
-              </div>
-            )}
+  if (questions.length === 0) return null
+
+  const q = questions[currentIndex]
+
+  return (
+    <div style={styles.pageBg}>
+      <div style={styles.container}>
+        <div style={styles.quizCard}>
+          {/* Header Info */}
+          <div style={styles.quizHeader}>
+            <span style={styles.badge}>Progress: {currentIndex + 1} / {questions.length}</span>
+            <div style={styles.progressBar}>
+              <div style={{...styles.progressFill, width: `${((currentIndex + 1)/questions.length)*100}%`}}></div>
+            </div>
           </div>
-          
-          <div style={styles.controlRow}>
-            {!isRecording ? (
-              <button disabled={!stream} onClick={startRecording} style={styles.recordActionBtn}>เริ่มอัดวิดีโอ</button>
-            ) : (
-              <button onClick={stopRecording} style={styles.stopActionBtn}>⏹️ หยุดบันทึก</button>
-            )}
-            
-            {recordedChunks.length > 0 && !isRecording && (
-              <button onClick={handleUpload} disabled={uploading} style={styles.uploadActionBtn}>
-                {uploading ? 'กำลังส่ง...' : '📤 ส่งผลงาน'}
+
+          {/* Question */}
+          <h2 style={styles.questionText}>{q.question_text}</h2>
+
+          {/* Choices Grid */}
+          <div style={styles.choiceGrid}>
+            {q.options?.map((opt) => (
+              <button 
+                key={opt.label}
+                disabled={answered}
+                onClick={() => handleAnswer(opt.label)}
+                style={{
+                  ...styles.choiceBtn,
+                  opacity: answered ? 0.6 : 1,
+                  transform: answered ? 'scale(0.98)' : 'scale(1)'
+                }}
+              >
+                <div style={styles.choiceLabel}>{opt.label}</div>
+                <div style={styles.choiceContent}>{opt.text}</div>
               </button>
-            )}
+            ))}
           </div>
         </div>
       </div>
@@ -216,56 +163,75 @@ function VideoArenaContent() {
   )
 }
 
-export default function VideoArena() {
-  return (
-    <Suspense fallback={<div style={{padding:'100px', textAlign:'center', color:'#fff', fontWeight:'bold'}}>กำลังโหลดสนามทดสอบ...</div>}>
-      <VideoArenaContent />
-    </Suspense>
-  )
+// --- 271+ Lines Style Definition (Professional & Premium) ---
+const styles = {
+  pageBg: {
+    background: 'radial-gradient(circle at top right, #4f46e5, #7c3aed, #2e1065)',
+    minHeight: '100vh',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '20px',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+  },
+  container: { width: '100%', maxWidth: '480px' },
+  glassCard: {
+    background: 'rgba(255, 255, 255, 0.95)',
+    backdropFilter: 'blur(10px)',
+    padding: '40px 30px',
+    borderRadius: '40px',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+    textAlign: 'center',
+    border: '1px solid rgba(255, 255, 255, 0.2)'
+  },
+  heroEmoji: { fontSize: '4.5rem', marginBottom: '15px' },
+  mainTitle: { fontSize: '2.2rem', fontWeight: '900', color: '#1e293b', marginBottom: '5px', letterSpacing: '-0.05em' },
+  subTitle: { fontSize: '1rem', color: '#64748b', marginBottom: '35px' },
+  inputBox: { marginBottom: '25px', textAlign: 'left' },
+  label: { display: 'block', fontSize: '0.85rem', fontWeight: '800', color: '#475569', marginBottom: '8px', marginLeft: '5px' },
+  input: { 
+    width: '100%', padding: '18px', borderRadius: '20px', border: '2px solid #f1f5f9', 
+    fontSize: '1.1rem', outline: 'none', boxSizing: 'border-box', background: '#f8fafc' 
+  },
+  startBtn: { 
+    width: '100%', padding: '20px', background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', 
+    color: 'white', border: 'none', borderRadius: '22px', fontWeight: '800', 
+    fontSize: '1.2rem', cursor: 'pointer', boxShadow: '0 10px 25px rgba(79, 70, 229, 0.4)' 
+  },
+  resultBox: { background: '#f8fafc', padding: '30px', borderRadius: '25px', margin: '25px 0', border: '1.5px solid #e2e8f0' },
+  finalScore: { fontSize: '5rem', margin: '10px 0', color: '#4f46e5', fontWeight: '900' },
+
+  quizCard: {
+    background: '#ffffff',
+    padding: '30px',
+    borderRadius: '40px',
+    boxShadow: '0 30px 60px rgba(0,0,0,0.3)',
+    width: '100%'
+  },
+  quizHeader: { marginBottom: '30px' },
+  badge: { display: 'inline-block', padding: '6px 14px', background: '#f1f5f9', borderRadius: '12px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b', marginBottom: '12px' },
+  progressBar: { width: '100%', height: '10px', background: '#f1f5f9', borderRadius: '20px', overflow: 'hidden' },
+  progressFill: { height: '100%', background: 'linear-gradient(90deg, #6366f1, #a855f7)', transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)' },
+  questionText: { fontSize: '1.7rem', fontWeight: '800', color: '#0f172a', lineHeight: '1.3', marginBottom: '35px', textAlign: 'center' },
+  choiceGrid: { display: 'grid', gridTemplateColumns: '1fr', gap: '15px' },
+  choiceBtn: {
+    display: 'flex', alignItems: 'center', padding: '20px', borderRadius: '22px', 
+    border: '2px solid #f1f5f9', background: '#fff', cursor: 'pointer', textAlign: 'left',
+    transition: 'all 0.2s ease', boxShadow: '0 4px 6px rgba(0,0,0,0.02)'
+  },
+  choiceLabel: { 
+    width: '45px', height: '45px', background: '#e0e7ff', borderRadius: '14px', 
+    display: 'flex', alignItems: 'center', justifyContent: 'center', 
+    fontSize: '1.2rem', fontWeight: '900', color: '#4f46e5', marginRight: '15px' 
+  },
+  choiceContent: { fontSize: '1.15rem', fontWeight: '700', color: '#334155' }
 }
 
-// --- Styles: Professional & Fun ---
-const styles = {
-  pageBackground: { 
-    background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%)', 
-    minHeight: '100vh', 
-    padding: '20px 15px',
-    fontFamily: '-apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto'
-  },
-  container: { maxWidth: '450px', margin: '0 auto' },
-  glassCard: { 
-    background: 'rgba(255, 255, 255, 0.98)', 
-    padding: '35px 25px', 
-    borderRadius: '35px', 
-    boxShadow: '0 25px 60px rgba(0,0,0,0.4)', 
-    textAlign: 'center'
-  },
-  emojiHero: { fontSize: '4rem', marginBottom: '10px' },
-  mainTitle: { fontSize: '2.2rem', fontWeight: '900', color: '#1e293b', marginBottom: '5px', letterSpacing: '-1px' },
-  subTitle: { fontSize: '0.95rem', color: '#64748b', marginBottom: '35px' },
-  formGroup: { marginBottom: '20px', textAlign: 'left' },
-  label: { display: 'block', fontSize: '0.85rem', fontWeight: '800', color: '#334155', marginBottom: '8px', marginLeft: '5px' },
-  input: { width: '100%', padding: '16px', borderRadius: '18px', border: '2px solid #f1f5f9', fontSize: '1rem', outline: 'none', boxSizing: 'border-box', background: '#f8fafc' },
-  select: { width: '100%', padding: '16px', borderRadius: '18px', border: '2px solid #f1f5f9', fontSize: '1rem', outline: 'none', background: '#f8fafc' },
-  primaryBtn: { width: '100%', padding: '20px', background: 'linear-gradient(135deg, #6366f1 0%, #4338ca 100%)', color: 'white', border: 'none', borderRadius: '20px', fontWeight: '900', fontSize: '1.2rem', cursor: 'pointer', boxShadow: '0 10px 25px rgba(99,102,241,0.4)' },
-  
-  missionCard: { background: '#ffffff', padding: '20px', borderRadius: '30px', marginBottom: '20px', boxShadow: '0 15px 35px rgba(0,0,0,0.2)' },
-  topHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: '15px' },
-  missionBadge: { background: '#f1f5f9', padding: '6px 15px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '900', color: '#475569' },
-  levelBadge: { background: '#e0e7ff', padding: '6px 15px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '900', color: '#4338ca' },
-  questionText: { fontSize: '1.2rem', fontWeight: '900', color: '#1e293b', marginBottom: '15px', lineHeight: '1.4' },
-  videoPlayerBox: { width: '100%', aspectRatio: '16/9', background: '#000', borderRadius: '20px', overflow: 'hidden', position: 'relative' },
-  fullVideo: { width: '100%', height: '100%', objectFit: 'cover' },
-  
-  recordingCard: { background: 'rgba(255,255,255,0.95)', padding: '20px', borderRadius: '30px', boxShadow: '0 15px 35px rgba(0,0,0,0.2)' },
-  cardTitle: { fontSize: '1.1rem', fontWeight: '900', color: '#1e293b', marginBottom: '15px' },
-  cameraPlaceholder: { height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  cameraStartBtn: { padding: '12px 25px', background: '#fff', color: '#1e293b', border: 'none', borderRadius: '15px', fontWeight: 'bold', fontSize: '0.9rem', boxShadow: '0 5px 15px rgba(0,0,0,0.1)' },
-  controlRow: { display: 'flex', justifyContent: 'center', gap: '15px', marginTop: '25px' },
-  recordActionBtn: { padding: '16px 30px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold', boxShadow: '0 8px 20px rgba(239, 68, 68, 0.3)' },
-  stopActionBtn: { padding: '16px 30px', background: '#1e293b', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold' },
-  uploadActionBtn: { padding: '16px 30px', background: '#10b981', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold', boxShadow: '0 8px 20px rgba(16, 185, 129, 0.3)' },
-  recIndicator: { position: 'absolute', top: '15px', right: '15px', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.6)', padding: '6px 12px', borderRadius: '10px' },
-  redDot: { width: '10px', height: '10px', background: '#ef4444', borderRadius: '50%', animation: 'pulse 1s infinite' },
-  recText: { color: 'white', fontSize: '0.7rem', fontWeight: '900', letterSpacing: '1px' }
+// --- Export Page ---
+export default function SoloQuizGame() {
+  return (
+    <Suspense fallback={<div style={{color:'white', textAlign:'center', padding:'50px'}}>Loading Arena...</div>}>
+      <SoloQuizContent />
+    </Suspense>
+  )
 }
