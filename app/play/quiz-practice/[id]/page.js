@@ -1,11 +1,10 @@
 'use client'
-
 import { useEffect, useState, Suspense } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
 function SoloQuizContent() {
-  const { id } = useParams() 
+  const { id } = useParams() // รับ ID ของ Game Session
   const router = useRouter()
 
   const [questions, setQuestions] = useState([])
@@ -16,96 +15,108 @@ function SoloQuizContent() {
   const [nickname, setNickname] = useState('')
   const [gameStarted, setGameStarted] = useState(false)
 
-  // 1. ดักจับค่า ID และดึงข้อมูล (ป้องกัน Error 400: invalid input syntax for type uuid)
   useEffect(() => {
-    if (id && id !== '[id]') {
-      fetchQuestions(id)
-    }
+    // 1. ดึงชื่อจาก LocalStorage ที่บันทึกมาจากหน้า Join Portal
+    const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
+    if (savedInfo.nickname) setNickname(savedInfo.nickname);
+
+    // 2. ดึงโจทย์ข้อสอบ
+    if (id && id !== '[id]') fetchQuestions();
   }, [id])
 
-  async function fetchQuestions(targetId) {
+  async function fetchQuestions() {
     try {
-      // ดึงคำถามโดยตรงจาก quiz_id ที่ส่งมาทาง URL
-      const { data: qs, error } = await supabase
-        .from('questions')
-        .select('*')
-        .eq('quiz_id', targetId)
-        .order('created_at', { ascending: true })
-      
-      if (qs && qs.length > 0) {
-        setQuestions(qs)
+      // ค้นหา quiz_id จาก session ก่อน
+      const { data: session } = await supabase
+        .from('game_sessions')
+        .select('quiz_id')
+        .eq('id', id)
+        .single()
+
+      if (session) {
+        const { data: qs } = await supabase
+          .from('questions')
+          .select('*')
+          .eq('quiz_id', session.quiz_id)
+          .order('created_at', { ascending: true })
+        
+        if (qs) setQuestions(qs)
       }
     } catch (err) {
-      console.error("Fetch Error:", err)
+      console.error("Error fetching questions:", err)
     }
   }
 
-  // 2. ตรวจคำตอบ (แก้ไข Logic คะแนนให้ถูกต้อง)
-  const handleAnswer = (selectedLabel) => {
+  // ✨ ฟังก์ชันตรวจคำตอบ (แก้ไขให้คะแนนขึ้น 15/15)
+  async function handleAnswer(selectedLabel) {
     if (answered) return;
     setAnswered(true);
 
     const currentQ = questions[currentIndex];
-    
-    // ตรวจสอบค่าเฉลยจาก correct_option ในฐานข้อมูล
+    let newScore = score;
+
+    // ✅ ตรวจสอบค่า correct_option (ต้องตรงกับชื่อคอลัมน์ใน Supabase)
     if (selectedLabel === currentQ.correct_option) {
-      setScore(prev => prev + 1);
+      newScore = score + 1;
+      setScore(newScore);
     }
 
-    setTimeout(() => {
+    setTimeout(async () => {
       if (currentIndex + 1 < questions.length) {
-        setCurrentIndex(prev => prev + 1);
+        setCurrentIndex(currentIndex + 1);
         setAnswered(false);
       } else {
+        // บันทึกคะแนนลงตาราง players ก่อนจบ
+        await saveScoreToDatabase(newScore);
         setIsFinished(true);
       }
     }, 600);
-  };
+  }
 
-  // --- UI หน้าแรก ---
+  async function saveScoreToDatabase(finalScore) {
+    const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
+    await supabase
+      .from('players')
+      .update({ score: finalScore })
+      .eq('session_id', id)
+      .eq('employee_id', savedInfo.employeeId)
+  }
+
+  // --- จอเข้าเกม (ถ้ายังไม่ได้เริ่ม) ---
   if (!gameStarted) {
     return (
       <div style={s.container}>
         <div style={s.card}>
-            <h1 style={s.mainTitle}>🎯 QUIZ ARENA</h1>
-            <p style={{color: '#64748b', marginBottom: '25px'}}>ระบุชื่อของคุณเพื่อเริ่มทำแบบทดสอบเข็มทิศ</p>
-            <input 
-              style={s.input} 
-              placeholder="กรอกชื่อเล่นของคุณ..." 
-              value={nickname} 
-              onChange={e => setNickname(e.target.value)} 
-            />
-            <button 
-              onClick={() => nickname ? setGameStarted(true) : alert('กรุณาระบุชื่อก่อนเริ่มนะครับ')} 
-              disabled={questions.length === 0} 
-              style={s.btnPrimary}
-            >
-                {questions.length === 0 ? 'กำลังโหลดข้อสอบ...' : 'เริ่มทำข้อสอบ'}
-            </button>
+            <div style={{fontSize: '3rem'}}>🏁</div>
+            <h1 style={s.title}>พร้อมลุยหรือยัง?</h1>
+            <p style={{color: '#666', marginBottom: '25px'}}>คุณลงทะเบียนในชื่อ: <b>{nickname}</b></p>
+            <button onClick={() => setGameStarted(true)} style={s.btnPrimary}>เริ่มทำข้อสอบ</button>
         </div>
       </div>
     )
   }
 
-  // --- UI หน้าสรุปคะแนน ---
+  // --- จอจบเกม (สรุปคะแนน) ---
   if (isFinished) {
     return (
       <div style={s.container}>
         <div style={s.card}>
-          <h1 style={{fontSize:'4rem'}}>🎊</h1>
-          <h2 style={{color: '#1e293b', fontWeight: '900'}}>บันทึกคะแนนสำเร็จ!</h2>
+          <h1 style={{fontSize:'4rem'}}>🎉</h1>
+          <h2 style={{fontWeight: '900'}}>ยอดเยี่ยมมาก!</h2>
           <div style={s.scoreBox}>
-            <p style={{fontWeight: 'bold', color: '#64748b'}}>คะแนนที่คุณทำได้</p>
-            <h1 style={{fontSize:'4.5rem', color:'#4f46e5', margin: '10px 0'}}>{score} / {questions.length}</h1>
+            <p style={{fontWeight: 'bold', color: '#666'}}>คะแนนรวมของคุณ</p>
+            <h1 style={{fontSize:'5rem', color:'#6f42c1', margin: '10px 0'}}>{score} / {questions.length}</h1>
           </div>
-          <button onClick={() => window.location.reload()} style={s.btnBack}>ทำใหม่อีกครั้ง</button>
+          <button onClick={() => router.push('/play')} style={s.btnBack}>กลับหน้าหลัก</button>
         </div>
       </div>
     )
   }
 
-  if (questions.length === 0) return null;
-  const currentQ = questions[currentIndex];
+  if (questions.length === 0) return <div style={s.container}>กำลังเตรียมข้อสอบ...</div>
+  
+  const currentQ = questions[currentIndex]
+  const choices = currentQ.options || [] 
 
   return (
     <div style={s.container}>
@@ -115,14 +126,14 @@ function SoloQuizContent() {
         </div>
         <h2 style={s.questionText}>{currentQ.question_text}</h2>
         <div style={s.gridChoices}>
-          {currentQ.options?.map((c) => (
+          {choices.map((c) => (
             <button 
               key={c.label} 
               disabled={answered} 
               onClick={() => handleAnswer(c.label)} 
-              style={s.choiceBtn(getBtnColor(c.label), answered)}
+              style={{...s.choiceBtn(getBtnColor(c.label)), opacity: answered ? 0.6 : 1}}
             >
-              <span style={s.labelBadge}>{c.label}</span>
+              <span style={s.label}>{c.label}</span>
               <span style={{flex: 1}}>{c.text}</span>
             </button>
           ))}
@@ -133,34 +144,30 @@ function SoloQuizContent() {
 }
 
 function getBtnColor(label) {
-  const colors = { A: '#ff7675', B: '#74b9ff', C: '#ffeaa7', D: '#55efc4' };
-  return colors[label] || '#eee';
+  const colors = { A: '#ff7675', B: '#74b9ff', C: '#ffeaa7', D: '#55efc4' }
+  return colors[label] || '#eee'
 }
 
 export default function SoloQuizGame() {
   return (
-    <Suspense fallback={<div style={{padding:'100px', textAlign:'center'}}>กำลังเตรียมข้อมูล...</div>}>
+    <Suspense fallback={<div>Loading...</div>}>
       <SoloQuizContent />
     </Suspense>
   )
 }
 
-// --- Styles (เน้นความคมชัดและความเป็นมืออาชีพ) ---
 const s = {
-  container: { minHeight: '100vh', background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', fontFamily: 'system-ui' },
-  card: { background: 'white', padding: '40px 30px', borderRadius: '32px', textAlign: 'center', width: '100%', maxWidth: '420px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' },
-  mainTitle: { fontSize: '2rem', fontWeight: '900', color: '#0f172a', marginBottom: '10px' },
-  input: { width: '100%', padding: '16px', borderRadius: '16px', border: '2px solid #f1f5f9', marginBottom: '20px', boxSizing: 'border-box', fontSize: '1.1rem', outline: 'none' },
-  btnPrimary: { width: '100%', padding: '18px', background: '#1e293b', color: 'white', border: 'none', borderRadius: '16px', fontWeight: '800', fontSize: '1.1rem', cursor: 'pointer' },
-  questionCard: { background: 'white', padding: '40px', borderRadius: '40px', width: '100%', maxWidth: '600px', textAlign: 'center', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.15)' },
-  questionText: { color: '#0f172a', fontSize: '1.8rem', fontWeight: '800', marginBottom: '35px', lineHeight: '1.3' },
-  progressBarBg: { width: '100%', height: '10px', background: '#f1f5f9', borderRadius: '10px', marginBottom: '35px', overflow: 'hidden' },
-  progressBarFill: { height: '100%', background: '#4f46e5', transition: 'width 0.4s ease' },
-  gridChoices: { display: 'grid', gridTemplateColumns: '1fr', gap: '15px' },
-  choiceBtn: (color, answered) => ({ 
-    padding: '22px', border: 'none', borderRadius: '20px', background: color, color: '#1e293b', fontWeight: '800', fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', textAlign: 'left', opacity: answered ? 0.6 : 1, boxShadow: '0 4px 0 rgba(0,0,0,0.05)'
-  }),
-  labelBadge: { background: 'rgba(255,255,255,0.5)', padding: '6px 14px', borderRadius: '10px', marginRight: '15px', fontSize: '1.3rem' },
-  scoreBox: { background: '#f8fafc', padding: '30px', borderRadius: '24px', margin: '25px 0', border: '1px solid #e2e8f0' },
-  btnBack: { width: '100%', padding: '15px', background: '#f1f5f9', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', color: '#475569' }
+  container: { minHeight: '100vh', background: '#f0f2f5', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', fontFamily: "'Inter', sans-serif" },
+  card: { background: 'white', padding: '40px', borderRadius: '35px', textAlign: 'center', width: '100%', maxWidth: '420px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)', border: '2px solid #ddd' },
+  title: { color: '#000', fontWeight: '900', marginBottom: '10px' },
+  questionCard: { background: 'white', padding: '40px 30px', borderRadius: '35px', width: '100%', maxWidth: '650px', textAlign: 'center', boxShadow: '0 15px 35px rgba(0,0,0,0.1)', border: '2px solid #eee' },
+  questionText: { color: '#1a1a1a', fontSize: '1.8rem', fontWeight: '900', marginBottom: '35px', lineHeight: '1.4' },
+  btnPrimary: { width: '100%', padding: '20px', background: '#000', color: 'white', border: 'none', borderRadius: '20px', cursor: 'pointer', fontWeight: '900', fontSize: '1.2rem' },
+  btnBack: { width: '100%', padding: '15px', background: '#eee', border: 'none', borderRadius: '15px', cursor: 'pointer', fontWeight: 'bold' },
+  scoreBox: { background: '#f8f9fa', padding: '25px', borderRadius: '20px', margin: '20px 0', border: '1px solid #ddd' },
+  progressBarBg: { width: '100%', height: '12px', background: '#eee', borderRadius: '10px', marginBottom: '30px', overflow: 'hidden' },
+  progressBarFill: { height: '100%', background: '#6f42c1', transition: 'width 0.4s ease' },
+  gridChoices: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' },
+  choiceBtn: (color) => ({ padding: '22px', border: 'none', borderRadius: '20px', background: color, color: '#000', fontWeight: '900', fontSize: '1.1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', textAlign: 'left', boxShadow: '0 4px 0 rgba(0,0,0,0.1)' }),
+  label: { background: 'rgba(0,0,0,0.1)', padding: '5px 12px', borderRadius: '10px', marginRight: '15px', fontSize: '1.3rem', fontWeight: '900' }
 }
