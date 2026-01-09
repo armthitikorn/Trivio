@@ -1,237 +1,191 @@
 'use client'
-import { useState, useEffect, useRef, Suspense } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabaseClient'
 
-function SoloQuizContent() {
-  const { id } = useParams()
+export default function SoloQuizGame() {
+  const { id } = useParams() 
   const router = useRouter()
 
-  // --- States Management ---
   const [questions, setQuestions] = useState([])
-  const [currentIndex, setCurrentIndex] = useState(0)
+  const [currentIndex, setCurrentIndex] = useState(0)  
   const [answered, setAnswered] = useState(false)
   const [score, setScore] = useState(0)
   const [isFinished, setIsFinished] = useState(false)
   const [nickname, setNickname] = useState('')
-  const [isStarted, setIsStarted] = useState(false)
+  const [gameStarted, setGameStarted] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  // --- Data Fetching ---
+  // --- 1. แก้ไข useEffect เพื่อดักจับค่า ID ที่ยังไม่พร้อม ---
   useEffect(() => {
-    if (id) fetchQuestions()
-    const saved = localStorage.getItem('temp_player_info')
-    if (saved) {
-      const info = JSON.parse(saved)
-      if (info.nickname) setNickname(info.nickname)
+    if (id && id !== '[id]') {
+      fetchQuestions()
     }
   }, [id])
 
   async function fetchQuestions() {
     try {
-      const { data, error } = await supabase
-        .from('questions')
-        .select('*')
-        .eq('quiz_id', id)
-        .order('created_at', { ascending: true })
-      
-      if (data) setQuestions(data)
-      if (error) throw error
+      const { data: session } = await supabase
+        .from('game_sessions')
+        .select('quiz_id')
+        .eq('id', id)
+        .single()
+
+      if (session) {
+        const { data: qs } = await supabase
+          .from('questions')
+          .select('*')
+          .eq('quiz_id', session.quiz_id)
+          .order('created_at', { ascending: true })
+        
+        if (qs) setQuestions(qs)
+      }
     } catch (err) {
       console.error("Fetch Error:", err.message)
     }
   }
 
-  // --- Game Logic ---
-  const handleStart = () => {
-    if (!nickname) return alert("กรุณาระบุชื่อของคุณก่อนเข้าสู่สนามสอบครับ")
-    setIsStarted(true)
+  async function startGame() {
+    if (!nickname) return alert("กรุณาระบุชื่อเล่นก่อนเริ่มนะครับ");
+    setLoading(true)
+    const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
+    
+    const { error } = await supabase.from('players').insert([{ 
+      session_id: id, 
+      nickname: nickname || savedInfo.nickname || 'Unknown', 
+      employee_id: savedInfo.employeeId,
+      department: savedInfo.department,
+      level: savedInfo.level,
+      score: 0 
+    }])
+    
+    if (error) {
+      console.error("Error saving player:", error)
+      alert("เกิดข้อผิดพลาดในการลงทะเบียน")
+    } else {
+      setGameStarted(true)
+    }
+    setLoading(false)
   }
 
-  const handleAnswer = (selectedLabel) => {
-    if (answered) return
-    setAnswered(true)
+  // --- 2. แก้ไขตรรกะการตรวจคำตอบ (correct_option) ---
+  async function handleAnswer(selectedLabel) {
+    if (answered) return;
+    setAnswered(true);
 
-    const currentQ = questions[currentIndex]
-    let newScore = score
+    const currentQ = questions[currentIndex];
+    let newScore = score;
 
-    // ✅ FIXED: เทียบค่า label (A,B,C,D) กับ correct_option จาก Database
+    // ✨ เปลี่ยนจาก correct_answer เป็น correct_option ให้ตรงกับหลังบ้าน
     if (selectedLabel === currentQ.correct_option) {
-      newScore = score + 1
-      setScore(newScore)
+      newScore = score + 1;
+      setScore(newScore);
     }
 
-    // Effect ก่อนเปลี่ยนข้อ
-    setTimeout(() => {
+    setTimeout(async () => {
       if (currentIndex + 1 < questions.length) {
-        setCurrentIndex(currentIndex + 1)
-        setAnswered(false)
+        setCurrentIndex(currentIndex + 1);
+        setAnswered(false);
       } else {
-        setIsFinished(true)
+        await saveFinalScore(newScore);
       }
-    }, 600)
+    }, 500);
   }
 
-  // --- UI: Welcome Screen ---
-  if (!isStarted) {
-    return (
-      <div style={styles.pageBg}>
-        <div style={styles.container}>
-          <div style={styles.glassCard}>
-            <div style={styles.heroEmoji}>🎖️</div>
-            <h1 style={styles.mainTitle}>TRIVIO <span style={{color:'#6366f1'}}>QUIZ</span></h1>
-            <p style={styles.subTitle}>สนามทดสอบทักษะและความรู้พนักงาน</p>
-            
-            <div style={styles.inputBox}>
-              <label style={styles.label}>ระบุชื่อผู้เข้าทดสอบ</label>
-              <input 
-                style={styles.input} 
-                placeholder="ชื่อ-นามสกุล ของคุณ..." 
-                value={nickname} 
-                onChange={(e) => setNickname(e.target.value)} 
-              />
-            </div>
+  async function saveFinalScore(finalScore) {
+    const savedInfo = JSON.parse(localStorage.getItem('temp_player_info') || '{}');
+    await supabase
+      .from('players')
+      .update({ score: finalScore })
+      .eq('session_id', id)
+      .eq('nickname', nickname) // ใช้ nickname จาก state ล่าสุด
 
-            <button onClick={handleStart} style={styles.startBtn}>
-              {questions.length === 0 ? 'กำลังเตรียมโจทย์...' : 'เริ่มทำข้อสอบ'}
+    setIsFinished(true)
+  }
+
+  // --- ส่วนการแสดงผล (UI เดิมที่คุณชอบ) ---
+  if (!gameStarted) {
+    return (
+      <div style={s.container}>
+        <div style={s.card}>
+            <h1 style={{color: '#1a1a1a', marginBottom: '20px'}}>📝 แบบทดสอบพนักงาน</h1>
+            <input style={s.input} placeholder="ระบุชื่อเล่นของคุณ" value={nickname} onChange={e => setNickname(e.target.value)} />
+            <button onClick={startGame} disabled={loading} style={s.btnPrimary}>
+                {loading ? 'กำลังเข้าสู่ระบบ...' : 'เริ่มทำข้อสอบ'}
             </button>
-          </div>
         </div>
       </div>
     )
   }
 
-  // --- UI: Finished Screen ---
   if (isFinished) {
     return (
-      <div style={styles.pageBg}>
-        <div style={styles.container}>
-          <div style={styles.glassCard}>
-            <div style={styles.heroEmoji}>🎉</div>
-            <h1 style={styles.mainTitle}>ภารกิจเสร็จสิ้น!</h1>
-            <div style={styles.resultBox}>
-              <p style={{margin:0, color:'#64748b', fontWeight:'bold'}}>คะแนนที่คุณทำได้</p>
-              <h1 style={styles.finalScore}>{score} <span style={{fontSize:'1.5rem', color:'#94a3b8'}}>/ {questions.length}</span></h1>
-            </div>
-            <button onClick={() => window.location.reload()} style={styles.startBtn}>ทำแบบทดสอบอีกครั้ง</button>
+      <div style={s.container}>
+        <div style={s.card}>
+          <h1 style={{fontSize:'3rem'}}>🎉</h1>
+          <h2 style={{color: '#1a1a1a'}}>เก่งมาก! ทำเสร็จแล้ว</h2>
+          <div style={s.scoreBox}>
+            <p style={{fontWeight: 'bold', color: '#666'}}>คะแนนที่คุณทำได้</p>
+            <h1 style={{fontSize:'4rem', color:'#6f42c1', margin: '10px 0'}}>{score} / {questions.length}</h1>
           </div>
+          <button onClick={() => router.push('/play')} style={s.btnBack}>กลับหน้าแรก</button>
         </div>
       </div>
     )
   }
 
-  if (questions.length === 0) return null
-
-  const q = questions[currentIndex]
+  if (questions.length === 0) return <div style={s.container}>กำลังโหลดข้อสอบ...</div>
+  
+  const currentQ = questions[currentIndex]
+  const choices = currentQ.options || [] 
+  
+  const getBtnColor = (label) => {
+    const colors = { A: '#ff7675', B: '#74b9ff', C: '#ffeaa7', D: '#55efc4' }
+    return colors[label] || '#eee'
+  }
 
   return (
-    <div style={styles.pageBg}>
-      <div style={styles.container}>
-        <div style={styles.quizCard}>
-          {/* Header Info */}
-          <div style={styles.quizHeader}>
-            <span style={styles.badge}>Progress: {currentIndex + 1} / {questions.length}</span>
-            <div style={styles.progressBar}>
-              <div style={{...styles.progressFill, width: `${((currentIndex + 1)/questions.length)*100}%`}}></div>
-            </div>
-          </div>
+    <div style={s.container}>
+      <div style={s.questionCard}>
+        <div style={s.progressBarBg}>
+          <div style={{ ...s.progressBarFill, width: `${((currentIndex + 1) / questions.length) * 100}%` }}></div>
+        </div>
 
-          {/* Question */}
-          <h2 style={styles.questionText}>{q.question_text}</h2>
-
-          {/* Choices Grid */}
-          <div style={styles.choiceGrid}>
-            {q.options?.map((opt) => (
-              <button 
-                key={opt.label}
-                disabled={answered}
-                onClick={() => handleAnswer(opt.label)}
-                style={{
-                  ...styles.choiceBtn,
-                  opacity: answered ? 0.6 : 1,
-                  transform: answered ? 'scale(0.98)' : 'scale(1)'
-                }}
-              >
-                <div style={styles.choiceLabel}>{opt.label}</div>
-                <div style={styles.choiceContent}>{opt.text}</div>
-              </button>
-            ))}
-          </div>
+        <h2 style={s.questionText}>{currentQ.question_text}</h2>
+        
+        <div style={s.gridChoices}>
+          {choices.map((c) => (
+            <button 
+              key={c.label} 
+              disabled={answered} 
+              onClick={() => handleAnswer(c.label)} 
+              style={{...s.choiceBtn(getBtnColor(c.label)), opacity: answered ? 0.6 : 1}}
+            >
+              <span style={s.label}>{c.label}</span>
+              <span style={{flex: 1}}>{c.text}</span>
+            </button>
+          ))}
         </div>
       </div>
     </div>
   )
 }
 
-// --- 271+ Lines Style Definition (Professional & Premium) ---
-const styles = {
-  pageBg: {
-    background: 'radial-gradient(circle at top right, #4f46e5, #7c3aed, #2e1065)',
-    minHeight: '100vh',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: '20px',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
-  },
-  container: { width: '100%', maxWidth: '480px' },
-  glassCard: {
-    background: 'rgba(255, 255, 255, 0.95)',
-    backdropFilter: 'blur(10px)',
-    padding: '40px 30px',
-    borderRadius: '40px',
-    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-    textAlign: 'center',
-    border: '1px solid rgba(255, 255, 255, 0.2)'
-  },
-  heroEmoji: { fontSize: '4.5rem', marginBottom: '15px' },
-  mainTitle: { fontSize: '2.2rem', fontWeight: '900', color: '#1e293b', marginBottom: '5px', letterSpacing: '-0.05em' },
-  subTitle: { fontSize: '1rem', color: '#64748b', marginBottom: '35px' },
-  inputBox: { marginBottom: '25px', textAlign: 'left' },
-  label: { display: 'block', fontSize: '0.85rem', fontWeight: '800', color: '#475569', marginBottom: '8px', marginLeft: '5px' },
-  input: { 
-    width: '100%', padding: '18px', borderRadius: '20px', border: '2px solid #f1f5f9', 
-    fontSize: '1.1rem', outline: 'none', boxSizing: 'border-box', background: '#f8fafc' 
-  },
-  startBtn: { 
-    width: '100%', padding: '20px', background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', 
-    color: 'white', border: 'none', borderRadius: '22px', fontWeight: '800', 
-    fontSize: '1.2rem', cursor: 'pointer', boxShadow: '0 10px 25px rgba(79, 70, 229, 0.4)' 
-  },
-  resultBox: { background: '#f8fafc', padding: '30px', borderRadius: '25px', margin: '25px 0', border: '1.5px solid #e2e8f0' },
-  finalScore: { fontSize: '5rem', margin: '10px 0', color: '#4f46e5', fontWeight: '900' },
-
-  quizCard: {
-    background: '#ffffff',
-    padding: '30px',
-    borderRadius: '40px',
-    boxShadow: '0 30px 60px rgba(0,0,0,0.3)',
-    width: '100%'
-  },
-  quizHeader: { marginBottom: '30px' },
-  badge: { display: 'inline-block', padding: '6px 14px', background: '#f1f5f9', borderRadius: '12px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b', marginBottom: '12px' },
-  progressBar: { width: '100%', height: '10px', background: '#f1f5f9', borderRadius: '20px', overflow: 'hidden' },
-  progressFill: { height: '100%', background: 'linear-gradient(90deg, #6366f1, #a855f7)', transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)' },
-  questionText: { fontSize: '1.7rem', fontWeight: '800', color: '#0f172a', lineHeight: '1.3', marginBottom: '35px', textAlign: 'center' },
-  choiceGrid: { display: 'grid', gridTemplateColumns: '1fr', gap: '15px' },
-  choiceBtn: {
-    display: 'flex', alignItems: 'center', padding: '20px', borderRadius: '22px', 
-    border: '2px solid #f1f5f9', background: '#fff', cursor: 'pointer', textAlign: 'left',
-    transition: 'all 0.2s ease', boxShadow: '0 4px 6px rgba(0,0,0,0.02)'
-  },
-  choiceLabel: { 
-    width: '45px', height: '45px', background: '#e0e7ff', borderRadius: '14px', 
-    display: 'flex', alignItems: 'center', justifyContent: 'center', 
-    fontSize: '1.2rem', fontWeight: '900', color: '#4f46e5', marginRight: '15px' 
-  },
-  choiceContent: { fontSize: '1.15rem', fontWeight: '700', color: '#334155' }
-}
-
-// --- Export Page ---
-export default function SoloQuizGame() {
-  return (
-    <Suspense fallback={<div style={{color:'white', textAlign:'center', padding:'50px'}}>Loading Arena...</div>}>
-      <SoloQuizContent />
-    </Suspense>
-  )
+// --- Styles เดิม (คงความคมชัดที่คุณชอบ) ---
+const s = {
+  container: { minHeight: '100vh', background: '#f0f2f5', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', fontFamily: "'Inter', sans-serif" },
+  card: { background: 'white', padding: '40px', borderRadius: '25px', textAlign: 'center', width: '100%', maxWidth: '400px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' },
+  questionCard: { background: 'white', padding: '40px 30px', borderRadius: '30px', width: '100%', maxWidth: '600px', textAlign: 'center', boxShadow: '0 15px 35px rgba(0,0,0,0.1)', border: '1px solid #eee' },
+  questionText: { color: '#1a1a1a', fontSize: '1.8rem', fontWeight: '800', marginBottom: '35px', lineHeight: '1.4' },
+  input: { width: '100%', padding: '15px', borderRadius: '10px', border: '1px solid #ddd', marginBottom: '20px', boxSizing: 'border-box', fontSize: '1rem' },
+  btnPrimary: { width: '100%', padding: '15px', background: '#2d3436', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.1rem' },
+  btnBack: { width: '100%', padding: '15px', background: '#f1f2f6', border: 'none', borderRadius: '10px', cursor: 'pointer', color: '#1a1a1a', fontWeight: 'bold' },
+  scoreBox: { background: '#f8f9fa', padding: '20px', borderRadius: '15px', margin: '20px 0', border: '1px solid #eee' },
+  progressBarBg: { width: '100%', height: '12px', background: '#e0e0e0', borderRadius: '10px', marginBottom: '30px', overflow: 'hidden' },
+  progressBarFill: { height: '100%', background: '#6f42c1', transition: 'width 0.3s ease' },
+  gridChoices: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '20px' },
+  choiceBtn: (color) => ({ 
+    padding: '22px', border: '2px solid rgba(0,0,0,0.05)', borderRadius: '20px', background: color, color: '#000', fontWeight: '800', fontSize: '1.1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', textAlign: 'left', boxShadow: '0 4px 0 rgba(0,0,0,0.1)', transition: 'transform 0.1s' 
+  }),
+  label: { background: 'rgba(0,0,0,0.15)', padding: '5px 12px', borderRadius: '10px', marginRight: '15px', fontSize: '1.3rem', color: '#000', fontWeight: '800' }
 }
