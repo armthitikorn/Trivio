@@ -11,21 +11,17 @@ function VideoArenaContent() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [stream, setStream] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [fileSize, setFileSize] = useState(0);
   const [recordedChunks, setRecordedChunks] = useState([]);
   const [uploading, setUploading] = useState(false);
-  const [nickname, setNickname] = useState('');
-  const [playerLevel, setPlayerLevel] = useState('Nursery'); // ✨ ค่าเริ่มต้นคือ Nursery
+  const [fullName, setFullName] = useState('');
+  const [playerLevel, setPlayerLevel] = useState('Nursery');
   const [isStarted, setIsStarted] = useState(false);
   
   const videoPreviewRef = useRef(null);
   const mediaRecorderRef = useRef(null);
-  const MAX_LIMIT = 10 * 1024 * 1024; // 10MB
 
   useEffect(() => { 
     fetchQuestions(); 
-    const savedName = localStorage.getItem('nickname');
-    if (savedName) setNickname(savedName);
   }, [targetId]);
   
   useEffect(() => {
@@ -34,52 +30,37 @@ function VideoArenaContent() {
     }
   }, [stream]);
 
-  useEffect(() => {
-    if (fileSize >= MAX_LIMIT && isRecording) {
-      stopRecording();
-      alert("⚠️ บันทึกครบ 10MB แล้ว ระบบหยุดอัดอัตโนมัติครับ");
-    }
-  }, [fileSize, isRecording]);
-
   async function fetchQuestions() {
     try {
       let query = supabase.from('video_questions').select('*');
-      if (targetId) { query = query.eq('id', targetId); } 
-      else { query = query.order('created_at', { ascending: false }); }
-
+      if (targetId) query = query.eq('id', targetId);
       const { data, error } = await query;
-      if (error) throw error;
       if (data) setQuestions(data);
-    } catch (err) {
-      console.error("Fetch error:", err.message);
-    }
+    } catch (err) { console.error(err); }
   }
 
   const startCamera = async () => {
     try {
       const s = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 720, height: 1280, facingMode: "user" }, 
+        video: { width: { ideal: 720 }, height: { ideal: 1280 }, facingMode: "user" }, 
         audio: true 
       });
       setStream(s);
-    } catch (err) { alert("เข้าถึงกล้องไม่ได้"); }
+    } catch (err) { alert("กรุณาอนุญาตให้ระบบเข้าถึงกล้องและไมโครโฟน"); }
   };
 
   const getSupportedMimeType = () => {
-    const types = ['video/webm;codecs=vp8', 'video/mp4', 'video/quicktime'];
+    const types = ['video/mp4', 'video/webm;codecs=vp8,opus', 'video/quicktime'];
     return types.find(type => MediaRecorder.isTypeSupported(type)) || '';
   };
 
   const startRecording = () => {
     setRecordedChunks([]);
-    setFileSize(0);
     const mimeType = getSupportedMimeType();
-    const recorder = new MediaRecorder(stream, { mimeType });
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+    
     recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        setRecordedChunks(prev => [...prev, e.data]);
-        setFileSize(prev => prev + e.data.size);
-      }
+      if (e.data.size > 0) setRecordedChunks(prev => [...prev, e.data]);
     };
     recorder.start(1000);
     mediaRecorderRef.current = recorder;
@@ -92,82 +73,84 @@ function VideoArenaContent() {
   };
 
   const handleUpload = async () => {
-    if (!nickname) return alert("กรุณาใส่ชื่อเล่นก่อนส่งงาน");
+    if (!fullName || fullName.trim().length < 4) return alert("กรุณาระบุชื่อ-นามสกุลจริง");
     setUploading(true);
     
     try {
       const mimeType = getSupportedMimeType();
       const blob = new Blob(recordedChunks, { type: mimeType });
-      const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
-      const fileName = `ans_${Date.now()}_${nickname}.${extension}`;
+      const extension = mimeType.includes('mp4') || mimeType.includes('quicktime') ? 'mp4' : 'webm';
+      
+      // ✅ Sanitize Path สำหรับมือถือ (ห้ามมีช่องว่าง)
+      const safeName = fullName.trim().replace(/[^a-zA-Z0-9ก-๙]/g, '_');
+      const fileName = `ans_${Date.now()}_${safeName}.${extension}`;
+      const storagePath = `answers/${fileName}`;
 
-      localStorage.setItem('nickname', nickname);
-
-      const { data: upData, error: upError } = await supabase.storage
+      const { error: upError } = await supabase.storage
         .from('video_training')
-        .upload(`answers/${fileName}`, blob);
+        .upload(storagePath, blob);
 
       if (upError) throw upError;
 
-      // ✨ บันทึกข้อมูลลง Database พร้อม player_level
       const { error: insError } = await supabase.from('video_answers').insert([{ 
         question_id: questions[currentIndex].id, 
-        nickname: nickname, 
-        player_level: playerLevel, // ✅ ระดับที่พนักงานเลือก
-        video_answer_url: upData.path,
+        nickname: fullName, 
+        player_level: playerLevel,
+        video_answer_url: storagePath,
         status: 'pending'
       }]);
 
       if (insError) throw insError;
 
-      alert("🚀 ส่งคำตอบสำเร็จ!");
+      alert("🚀 บันทึกข้อมูลสำเร็จ! ขอบคุณสำหรับการทดสอบ");
       if (currentIndex < questions.length - 1) {
         setCurrentIndex(prev => prev + 1);
-        setRecordedChunks([]); setFileSize(0);
+        setRecordedChunks([]); 
       } else {
-        alert("ทำครบทุกโจทย์แล้ว ขอบคุณครับ!");
         window.location.reload();
       }
     } catch (err) {
-      alert("เกิดข้อผิดพลาด: " + err.message);
+      alert("Error: " + err.message);
     } finally {
       setUploading(false);
     }
   };
 
-  // --- UI: หน้าแรก (เลือกชื่อและระดับ) ---
+  // --- UI: Welcome Screen ---
   if (!isStarted) {
     return (
       <div style={styles.pageBackground}>
         <div style={styles.container}>
-          <div style={styles.sectionCard}>
-            <h2 style={{textAlign:'center', color:'#8e44ad', marginBottom:'20px'}}>🎬 TRIVIO Arena</h2>
+          <div style={styles.glassCard}>
+            <div style={styles.iconCircle}>🎬</div>
+            <h1 style={styles.mainTitle}>TRIVIO ARENA</h1>
+            <p style={styles.subTitle}>กรุณาระบุข้อมูลเพื่อเข้าสู่การทดสอบ</p>
             
-            <label style={styles.labelInput}>ระบุชื่อเล่น:</label>
-            <input 
-              style={styles.modernInput} 
-              placeholder="ชื่อเล่นของคุณ..." 
-              value={nickname} 
-              onChange={(e) => setNickname(e.target.value)} 
-            />
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>ชื่อจริง - นามสกุล</label>
+              <input 
+                style={styles.input} 
+                placeholder="สมชาย ใจดี" 
+                value={fullName} 
+                onChange={(e) => setFullName(e.target.value)} 
+              />
+            </div>
 
-            <label style={styles.labelInput}>เลือกระดับของคุณ (Level):</label>
-            <select 
-              style={styles.modernInput} 
-              value={playerLevel} 
-              onChange={(e) => setPlayerLevel(e.target.value)}
-            >
-              <option value="Nursery">Nursery (ระดับพื้นฐาน)</option>
-              <option value="Rising Star">Rising Star (ระดับมาแรง)</option>
-              <option value="Legend">Legend (ระดับตำนาน)</option>
-            </select>
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>ระดับความยาก</label>
+              <select style={styles.select} value={playerLevel} onChange={(e)=>setPlayerLevel(e.target.value)}>
+                <option value="Nursery">🍼 Nursery (Basic)</option>
+                <option value="Rising Star">⭐ Rising Star (Intermediate)</option>
+                <option value="Legend">🏆 Legend (Advanced)</option>
+              </select>
+            </div>
 
             <button 
-              disabled={!nickname || questions.length === 0} 
+              disabled={!fullName || questions.length === 0} 
               onClick={() => setIsStarted(true)} 
-              style={{...styles.actionBtn, width:'100%', marginTop:'10px'}}
+              style={{...styles.primaryBtn, marginTop: '20px'}}
             >
-              {questions.length === 0 ? 'กำลังโหลดโจทย์...' : 'เริ่มภารกิจ'}
+              {questions.length === 0 ? 'กำลังเตรียมโจทย์...' : 'เริ่มการทดสอบ'}
             </button>
           </div>
         </div>
@@ -175,49 +158,52 @@ function VideoArenaContent() {
     )
   }
 
-  // --- UI: หน้าทำโจทย์ ---
+  // --- UI: Mission Arena ---
   const currentQuestion = questions[currentIndex];
-  const questionVideoUrl = currentQuestion ? supabase.storage.from('video_training').getPublicUrl(currentQuestion.video_url).data.publicUrl : '';
 
   return (
     <div style={styles.pageBackground}>
       <div style={styles.container}>
-        <div style={styles.sectionCard}>
-          <div style={{display:'flex', justifyContent:'space-between', marginBottom:'10px'}}>
-             <span style={styles.badge}>โจทย์ที่ {currentIndex + 1}/{questions.length}</span>
-             <span style={{...styles.badge, background:'#e8f4fd', color:'#0984e3'}}>ระดับ: {playerLevel}</span>
+        {/* โจทย์ Card */}
+        <div style={styles.glassCard}>
+          <div style={styles.topBar}>
+            <span style={styles.badge}>Missions {currentIndex + 1}/{questions.length}</span>
+            <span style={styles.levelBadge}>{playerLevel}</span>
           </div>
-          <h3 style={styles.labelHeader}>📌 หัวข้อ: {currentQuestion?.title}</h3>
-          <div style={styles.videoFrame}>
-            {questionVideoUrl && <video controls playsInline style={styles.videoElement} src={questionVideoUrl} />}
+          <h2 style={styles.questionTitle}>{currentQuestion?.title}</h2>
+          <div style={styles.videoWrapper}>
+            <video controls playsInline style={styles.videoElement} 
+              src={currentQuestion ? supabase.storage.from('video_training').getPublicUrl(currentQuestion.video_url).data.publicUrl : ''} 
+            />
           </div>
         </div>
 
-        <div style={styles.sectionCard}>
-          <h3 style={styles.labelHeader}>🤳 บันทึกคำตอบของคุณ</h3>
-          <div style={styles.videoFrame}>
+        {/* บันทึกคำตอบ Card */}
+        <div style={styles.glassCard}>
+          <h3 style={styles.sectionTitle}>🤳 บันทึกคำตอบ</h3>
+          <div style={styles.videoWrapper}>
             {!stream ? (
               <div style={styles.placeholder}>
-                <button onClick={startCamera} style={styles.actionBtn}>📸 เปิดกล้องตอบโจทย์</button>
+                <button onClick={startCamera} style={styles.cameraBtn}>📸 เปิดกล้อง</button>
               </div>
             ) : (
               <div style={{position:'relative', height:'100%'}}>
                 <video ref={videoPreviewRef} autoPlay muted playsInline style={{...styles.videoElement, transform:'scaleX(-1)'}} />
-                {isRecording && <div style={styles.recTag}>● Recording</div>}
+                {isRecording && <div style={styles.pulseDot}><span style={styles.recText}>REC</span></div>}
               </div>
             )}
           </div>
           
-          <div style={{marginTop:'20px', textAlign:'center', display:'flex', justifyContent:'center', gap:'10px'}}>
+          <div style={styles.btnRow}>
             {!isRecording ? (
-              <button disabled={!stream} onClick={startRecording} style={styles.recordBtn}>เริ่มอัดวิดีโอ</button>
+              <button disabled={!stream} onClick={startRecording} style={styles.recordBtn}>เริ่มบันทึก</button>
             ) : (
-              <button onClick={stopRecording} style={styles.stopBtn}>⏹️ หยุดอัด</button>
+              <button onClick={stopRecording} style={styles.stopBtn}>⏹️ หยุดบันทึก</button>
             )}
             
             {recordedChunks.length > 0 && !isRecording && (
-              <button onClick={handleUpload} disabled={uploading} style={styles.saveBtn}>
-                {uploading ? 'กำลังส่ง...' : '📤 ส่งคำตอบ'}
+              <button onClick={handleUpload} disabled={uploading} style={styles.uploadBtn}>
+                {uploading ? 'กำลังส่ง...' : '📤 ส่งผลงาน'}
               </button>
             )}
           </div>
@@ -229,26 +215,52 @@ function VideoArenaContent() {
 
 export default function VideoArena() {
   return (
-    <Suspense fallback={<div style={{padding:'50px', textAlign:'center'}}>กำลังเตรียมระบบ...</div>}>
+    <Suspense fallback={<div style={{padding:'100px', textAlign:'center', color:'#666'}}>กำลังโหลด Arena...</div>}>
       <VideoArenaContent />
     </Suspense>
   )
 }
 
+// --- Premium Styles ---
 const styles = {
-    pageBackground: { background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', minHeight: '100vh', padding: '20px 10px' },
-    container: { maxWidth: '500px', margin: '0 auto' },
-    sectionCard: { background: '#fff', padding: '25px', borderRadius: '25px', boxShadow: '0 10px 30px rgba(0,0,0,0.08)', marginBottom: '20px' },
-    videoFrame: { width: '100%', aspectRatio: '16/9', background: '#000', borderRadius: '15px', overflow: 'hidden', position: 'relative', border: '3px solid #eee' },
-    videoElement: { width: '100%', height: '100%', objectFit: 'cover' },
-    modernInput: { width: '100%', padding: '12px 15px', borderRadius: '12px', border: '2px solid #ddd', marginBottom: '15px', fontSize: '1rem', outline: 'none', boxSizing: 'border-box', background: '#fdfdfd' },
-    labelInput: { display: 'block', fontSize: '0.85rem', color: '#666', marginBottom: '5px', marginLeft: '5px' },
-    placeholder: { height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-    recordBtn: { padding: '12px 25px', background: '#ff4757', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold', cursor: 'pointer' },
-    stopBtn: { padding: '12px 25px', background: '#2d3436', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold', cursor: 'pointer' },
-    saveBtn: { padding: '12px 25px', background: '#2ed573', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' },
-    actionBtn: { padding: '15px 25px', background: '#8e44ad', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 'bold' },
-    labelHeader: { fontSize: '1.1rem', color: '#2d3436', marginBottom: '12px', fontWeight: 'bold' },
-    badge: { background: '#f0f0f0', padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', color: '#666', fontWeight: 'bold' },
-    recTag: { position: 'absolute', top: '10px', left: '10px', background: 'rgba(255, 71, 87, 0.8)', color: 'white', padding: '4px 10px', borderRadius: '5px', fontSize: '0.7rem' }
+  pageBackground: { 
+    background: 'radial-gradient(circle at top right, #6366f1, #a855f7, #ec4899)', 
+    minHeight: '100vh', 
+    padding: '30px 15px',
+    fontFamily: '"Inter", sans-serif'
+  },
+  container: { maxWidth: '480px', margin: '0 auto' },
+  glassCard: { 
+    background: 'rgba(255, 255, 255, 0.92)', 
+    backdropFilter: 'blur(10px)', 
+    padding: '25px', 
+    borderRadius: '30px', 
+    boxShadow: '0 20px 40px rgba(0,0,0,0.2)', 
+    marginBottom: '20px',
+    border: '1px solid rgba(255, 255, 255, 0.3)'
+  },
+  mainTitle: { fontSize: '2rem', fontWeight: '900', color: '#1e293b', textAlign: 'center', margin: '10px 0 5px' },
+  subTitle: { fontSize: '0.9rem', color: '#64748b', textAlign: 'center', marginBottom: '30px' },
+  iconCircle: { width: '60px', height: '60px', background: '#f1f5f9', borderRadius: '50%', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' },
+  inputGroup: { marginBottom: '15px' },
+  label: { display: 'block', fontSize: '0.85rem', fontWeight: '700', color: '#475569', marginBottom: '8px', marginLeft: '5px' },
+  input: { width: '100%', padding: '15px', borderRadius: '15px', border: '1.5px solid #e2e8f0', fontSize: '1rem', outline: 'none', boxSizing: 'border-box' },
+  select: { width: '100%', padding: '15px', borderRadius: '15px', border: '1.5px solid #e2e8f0', fontSize: '1rem', outline: 'none', background: '#fff' },
+  primaryBtn: { width: '100%', padding: '18px', background: 'linear-gradient(to right, #6366f1, #a855f7)', color: 'white', border: 'none', borderRadius: '15px', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(99, 102, 241, 0.3)' },
+  
+  topBar: { display: 'flex', justifyContent: 'space-between', marginBottom: '15px' },
+  badge: { background: '#f1f5f9', padding: '6px 12px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b' },
+  levelBadge: { background: '#e0e7ff', padding: '6px 12px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 'bold', color: '#4338ca' },
+  questionTitle: { fontSize: '1.2rem', fontWeight: '800', color: '#1e293b', marginBottom: '15px' },
+  sectionTitle: { fontSize: '1.1rem', fontWeight: '800', color: '#1e293b', marginBottom: '15px' },
+  videoWrapper: { width: '100%', aspectRatio: '16/9', background: '#0f172a', borderRadius: '20px', overflow: 'hidden', position: 'relative', boxShadow: 'inset 0 0 20px rgba(0,0,0,0.5)' },
+  videoElement: { width: '100%', height: '100%', objectFit: 'cover' },
+  placeholder: { height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  cameraBtn: { padding: '12px 25px', background: '#fff', color: '#1e293b', border: 'none', borderRadius: '12px', fontWeight: 'bold' },
+  btnRow: { display: 'flex', justifyContent: 'center', gap: '15px', marginTop: '25px' },
+  recordBtn: { padding: '15px 30px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold', boxShadow: '0 8px 15px rgba(239, 68, 68, 0.3)' },
+  stopBtn: { padding: '15px 30px', background: '#1e293b', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold' },
+  uploadBtn: { padding: '15px 30px', background: '#10b981', color: 'white', border: 'none', borderRadius: '50px', fontWeight: 'bold', boxShadow: '0 8px 15px rgba(16, 185, 129, 0.3)' },
+  pulseDot: { position: 'absolute', top: '15px', right: '15px', display: 'flex', alignItems: 'center', gap: '5px' },
+  recText: { color: 'white', fontSize: '0.7rem', fontWeight: 'bold', background: 'rgba(239, 68, 68, 0.8)', padding: '3px 8px', borderRadius: '5px' }
 }
