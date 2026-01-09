@@ -79,8 +79,9 @@ export default function HostDashboard() {
       {/* Header */}
       <div style={s.header}>
         <div>
-          <h1 style={{ margin:0, color:'#2d3436' }}>👩‍🏫 Quiz Dashboard</h1>
-          <p style={{ margin:'5px 0 0 0', color:'#666' }}>ระบบจัดการแบบทดสอบออนไลน์</p>
+          {/* ปรับสีเป็นน้ำเงินเข้ม #1e1b4b */}
+          <h1 style={{ margin:0, color:'#1e1b4b', fontWeight: '900' }}>👩‍🏫 Quiz Dashboard</h1>
+          <p style={{ margin:'5px 0 0 0', color:'#1e1b4b', fontWeight: '600' }}>ระบบจัดการแบบทดสอบออนไลน์</p>
         </div>
         <button 
           onClick={async () => { await supabase.auth.signOut(); router.push('/login'); }} 
@@ -111,20 +112,21 @@ export default function HostDashboard() {
         </div>
       </div>
 
-      {/* โซนรายชื่อ Quiz */}
-      <h3 style={{ color: '#2d3436', marginBottom:'20px' }}>📚 แบบทดสอบของคุณ ({quizzes.length})</h3>
+      {/* โซนรายชื่อ Quiz - ปรับสีเป็นน้ำเงินเข้ม */}
+      <h3 style={{ color: '#1e1b4b', marginBottom:'20px', fontWeight: '900' }}>📚 แบบทดสอบของคุณ ({quizzes.length})</h3>
       
       {quizzes.length === 0 ? (
         <div style={s.emptyState}>
-          <p>ยังไม่มีแบบทดสอบเลย ลองสร้างอันแรกดูสิ!</p>
+          <p style={{ color: '#1e1b4b' }}>ยังไม่มีแบบทดสอบเลย ลองสร้างอันแรกดูสิ!</p>
         </div>
       ) : (
         <div style={s.grid}>
           {quizzes.map((quiz) => (
             <div key={quiz.id} style={s.quizCard}>
               <div style={{ flex: 1 }}>
-                <h4 style={{ margin: '0 0 5px 0', color: '#333', fontSize: '1.2rem' }}>{quiz.title}</h4>
-                <small style={{ color: '#aaa' }}>สร้างเมื่อ: {new Date(quiz.created_at).toLocaleDateString('th-TH')}</small>
+                {/* ชื่อ Quiz สีน้ำเงินเข้ม */}
+                <h4 style={{ margin: '0 0 5px 0', color: '#1e1b4b', fontSize: '1.2rem', fontWeight: '800' }}>{quiz.title}</h4>
+                <small style={{ color: '#4338ca', fontWeight: '600' }}>สร้างเมื่อ: {new Date(quiz.created_at).toLocaleDateString('th-TH')}</small>
               </div>
               
               <div style={s.actionGroup}>
@@ -157,8 +159,8 @@ export default function HostDashboard() {
       {selectedQR && (
         <div style={s.modalOverlay} onClick={() => setSelectedQR(null)}>
           <div style={s.modalContent} onClick={e => e.stopPropagation()}>
-            <h2 style={{ marginTop: 0, color: '#2d3436' }}>QR Code สำหรับเข้าสอบ</h2>
-            <p style={{ color: '#666', marginBottom: '20px' }}>{selectedQR.title}</p>
+            <h2 style={{ marginTop: 0, color: '#1e1b4b', fontWeight: '900' }}>QR Code สำหรับเข้าสอบ</h2>
+            <p style={{ color: '#4338ca', marginBottom: '20px', fontWeight: '700' }}>{selectedQR.title}</p>
             
             <div style={s.qrWrapper}>
               <QRCodeCanvas 
@@ -179,26 +181,26 @@ export default function HostDashboard() {
   )
 }
 
-// --- Styles ต้นฉบับ ---
+// --- Styles ปรับสีตัวหนังสือเป็นน้ำเงินเข้ม ---
 const s = {
   container: { padding: '40px', maxWidth: '1000px', margin: '0 auto', fontFamily: "'Inter', sans-serif", minHeight:'100vh', background:'#f8f9fa' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' },
-  btnLogout: { padding: '10px 20px', background: 'white', border: '1px solid #ddd', borderRadius: '50px', cursor: 'pointer', color:'#555', fontWeight:'bold' },
+  btnLogout: { padding: '10px 20px', background: 'white', border: '2px solid #1e1b4b', borderRadius: '50px', cursor: 'pointer', color:'#1e1b4b', fontWeight:'bold' },
   createCard: { background: 'linear-gradient(120deg, #84fab0 0%, #8fd3f4 100%)', padding: '30px', borderRadius: '20px', marginBottom: '40px', boxShadow: '0 10px 20px rgba(132, 250, 176, 0.2)' },
   inputGroup: { display: 'flex', gap: '10px', background:'rgba(255,255,255,0.3)', padding:'8px', borderRadius:'15px', backdropFilter:'blur(5px)' },
-  input: { flex: 1, padding: '15px', borderRadius: '10px', border: 'none', outline: 'none', fontSize:'1rem', background:'white' },
-  btnCreate: { padding: '10px 30px', background: '#2d3436', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' },
-  emptyState: { textAlign: 'center', padding: '50px', background: 'white', border: '2px dashed #ddd', borderRadius: '20px', color:'#aaa' },
+  input: { flex: 1, padding: '15px', borderRadius: '10px', border: 'none', outline: 'none', fontSize:'1rem', background:'white', color: '#1e1b4b', fontWeight: 'bold' },
+  btnCreate: { padding: '10px 30px', background: '#1e1b4b', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' },
+  emptyState: { textAlign: 'center', padding: '50px', background: 'white', border: '2px dashed #ddd', borderRadius: '20px', color:'#1e1b4b' },
   grid: { display: 'grid', gap: '15px' },
-  quizCard: { background: 'white', padding: '20px', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' },
+  quizCard: { background: 'white', padding: '20px', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' },
   actionGroup: { display: 'flex', gap: '10px', alignItems:'center' },
   btnQR: { padding: '12px 15px', background: '#6c5ce7', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' },
-  btnMonitor: { padding: '12px 15px', background: 'linear-gradient(45deg, #00b894, #00cec9)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' },
-  btnEdit: { padding: '12px 15px', background: '#dfe6e9', color: '#636e72', border: 'none', borderRadius: '10px', cursor: 'pointer' },
+  btnMonitor: { padding: '12px 15px', background: 'linear-gradient(45deg, #1e1b4b, #4338ca)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' },
+  btnEdit: { padding: '12px 15px', background: '#dfe6e9', color: '#1e1b4b', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' },
   btnDelete: { padding: '12px 15px', background: '#ff7675', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer' },
-  modalOverlay: { position: 'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.6)', display:'flex', justifyContent:'center', alignItems:'center', zIndex: 1000, backdropFilter:'blur(4px)' },
+  modalOverlay: { position: 'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(30, 27, 75, 0.7)', display:'flex', justifyContent:'center', alignItems:'center', zIndex: 1000, backdropFilter:'blur(4px)' },
   modalContent: { background:'white', padding:'40px', borderRadius:'30px', textAlign:'center', maxWidth:'400px', width:'90%', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' },
-  qrWrapper: { background:'#f4f4f4', padding:'25px', borderRadius:'20px', display:'inline-block', marginBottom:'20px' },
-  qrNote: { fontSize:'0.9rem', color:'#888', marginBottom:'20px' },
-  btnClose: { width:'100%', padding:'15px', border:'none', borderRadius:'12px', background:'#2d3436', color:'white', cursor:'pointer', fontWeight:'bold', fontSize:'1rem' }
+  qrWrapper: { background:'#f4f4f4', padding:'25px', borderRadius:'20px', display:'inline-block', marginBottom:'20px', border: '1px solid #e2e8f0' },
+  qrNote: { fontSize:'0.95rem', color:'#1e1b4b', marginBottom:'20px', fontWeight: 'bold' },
+  btnClose: { width:'100%', padding:'15px', border:'none', borderRadius:'12px', background:'#1e1b4b', color:'white', cursor:'pointer', fontWeight:'bold', fontSize:'1rem' }
 }
