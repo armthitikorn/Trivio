@@ -18,13 +18,13 @@ export default function AudioGameArena() {
   
   const mediaRecorder = useRef(null)
 
-  // --- ตรรกะเดิม: ดึงข้อมูลแบบเดิมที่เคยใช้งานได้ ---
   useEffect(() => {
     if (id) fetchSessionAndQuestions()
   }, [id])
 
   async function fetchSessionAndQuestions() {
     try {
+      // 1. ดึงข้อมูล Session ก่อนเพื่อดูว่า PIN นี้ผูกกับสินค้า (Product Type) อะไร
       const { data: session, error: sError } = await supabase
         .from('game_sessions')
         .select('*')
@@ -34,19 +34,17 @@ export default function AudioGameArena() {
       if (sError || !session) return
       setSessionInfo(session)
 
+      // 2. ดึงคำถามเฉพาะที่ตรงกับ แผนก และ ประเภทสินค้า (Product Type)
       const { data: qs } = await supabase
         .from('questions')
         .select('*')
         .eq('target_department', session.target_department)
+        .eq('product_type', session.product_type) // ✨ กรองตามประเภทสินค้าที่ Trainer เลือก
         .order('created_at', { ascending: true })
 
       if (qs) {
-        const validQs = qs.filter(q => {
-            const hasText = q.text && q.text.trim() !== ""
-            const hasMedia = q.media_url && q.media_url.trim() !== ""
-            const hasAudioQ = q.audio_question_url && q.audio_question_url.trim() !== ""
-            return hasText || hasMedia || hasAudioQ
-        })
+        // กรองเฉพาะข้อที่มีข้อมูลสำหรับเล่นเสียง
+        const validQs = qs.filter(q => q.text || q.media_url || q.audio_question_url)
         setQuestions(validQs)
       }
     } catch (err) {
@@ -54,7 +52,7 @@ export default function AudioGameArena() {
     }
   }
 
-  // --- ตรรกะการอัดเสียงเดิม ---
+  // --- ตรรกะการอัดเสียง (คงเดิมตามที่คุณใช้งานได้ดีอยู่แล้ว) ---
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -78,13 +76,14 @@ export default function AudioGameArena() {
     }
   }
 
-  // --- ตรรกะการส่งไฟล์เดิม (Real-time Upload) ---
+  // --- ตรรกะการส่งไฟล์ (ปรับ Folder ตามชื่อสินค้าเพื่อให้ Trainer ตรวจง่าย) ---
   async function submitAnswer() {
     if (!audioUrl) return
     setUploading(true)
 
     const nickname = localStorage.getItem('player_name') || 'Warrior'
-    const fileName = `answers/${sessionInfo?.target_department}/${id}/${Date.now()}.wav`
+    // ✨ แยกโฟลเดอร์ตามประเภทสินค้า
+    const fileName = `answers/${sessionInfo?.product_type || 'general'}/${id}/${Date.now()}.wav`
 
     try {
         const { error: upError } = await supabase.storage.from('recordings').upload(fileName, audioUrl)
@@ -102,7 +101,7 @@ export default function AudioGameArena() {
             setAudioUrl(null)
             setPreviewUrl(null)
         } else {
-            alert("🎉 จบการฝึกฝนแล้ว! สุดยอดมาก")
+            alert("🎉 จบภารกิจเรียบร้อย! คุณยอดเยี่ยมมาก")
             router.push('/play/audio')
         }
     } catch (err) {
@@ -112,7 +111,7 @@ export default function AudioGameArena() {
     }
   }
 
-  if (questions.length === 0) return <div style={s.pageContainer}>⏳ กำลังโหลดสนามฝึก...</div>
+  if (questions.length === 0) return <div style={s.pageContainer}>⏳ กำลังโหลดภารกิจ {sessionInfo?.product_type || ''}...</div>
 
   const currentQ = questions[currentIndex]
   const rawPath = currentQ?.text || currentQ?.media_url || currentQ?.audio_question_url || ""
@@ -126,10 +125,10 @@ export default function AudioGameArena() {
     <div style={s.pageContainer}>
       <div style={s.mainCard}>
         
-        {/* ✨ ส่วนที่เพิ่มเติม: แสดงหัวข้อให้พนักงานเห็นชัดเจน (ใช้ข้อมูลจาก sessionInfo) */}
+        {/* ✨ ปรับการแสดงผลหัวข้อตามประเภทสินค้าที่เลือก */}
         <div style={s.topicIndicator}>
-             <p style={{fontSize: '0.8rem', opacity: 0.8, marginBottom: '5px'}}>หัวข้อแบบทดสอบปัจจุบัน:</p>
-             <h3 style={{margin: 0, fontWeight: '900'}}>{sessionInfo?.objection_topic || 'กำลังเตรียมข้อมูล...'}</h3>
+             <p style={{fontSize: '0.8rem', opacity: 0.8, marginBottom: '5px'}}>ภารกิจปัจจุบัน:</p>
+             <h3 style={{margin: 0, fontWeight: '900'}}>{sessionInfo?.product_type || 'กำลังเตรียมโจทย์...'}</h3>
         </div>
 
         <p style={{ color: '#00b894', fontWeight: 'bold', letterSpacing: '1px', marginTop: '20px' }}>
@@ -137,29 +136,31 @@ export default function AudioGameArena() {
         </p>
         
         <h2 style={{ margin: '15px 0', color: '#2d3436' }}>
-          {currentQ.question_text || `หมวด: ${currentQ.category}`}
+          {/* แสดงประเภท (Intro/Objection/Closing) คู่กับสคริปต์ */}
+          <span style={{fontSize: '0.9rem', color: '#6c5ce7', display: 'block'}}>[{currentQ.category}]</span>
+          {currentQ.question_text}
         </h2>
         
         <div style={s.audioBox}>
           <p style={{marginBottom: '10px', color: '#555'}}>🎧 ฟังเสียงลูกค้า:</p>
-          <audio key={questionAudioUrl} src={questionAudioUrl} controls style={{ width: '100%', borderRadius: '10px' }} />
+          <audio key={currentQ.id} src={questionAudioUrl} controls style={{ width: '100%', borderRadius: '10px' }} />
         </div>
 
         <hr style={{ border: 'none', height: '1px', background: '#eee', margin: '30px 0' }} />
 
         <div>
-          <h3 style={{color: '#2d3436'}}>🎙️ บันทึกเสียงตอบกลับ</h3>
+          <h3 style={{color: '#2d3436'}}>🎙️ บันทึกเสียงตอบกลับของคุณ</h3>
           <div style={{marginTop: '20px'}}>
             {!isRecording ? (
-              <button onClick={startRecording} style={s.btnRecord}>🎤</button>
+              <button onClick={startRecording} style={s.btnRecord}>🎤 เริ่มอัดเสียง</button>
             ) : (
-              <button onClick={stopRecording} style={s.btnStop}>⬛</button>
+              <button onClick={stopRecording} style={s.btnStop}>⬛ หยุดอัด</button>
             )}
           </div>
           
           {previewUrl && (
             <div style={{ marginTop: '25px' }}>
-              <p style={{fontSize: '0.9rem', color: '#666', marginBottom: '10px'}}>เช็คเสียงของคุณ:</p>
+              <p style={{fontSize: '0.9rem', color: '#666', marginBottom: '10px'}}>เช็คเสียงของคุณก่อนส่ง:</p>
               <audio src={previewUrl} controls style={{ width: '100%', borderRadius: '10px' }} />
               
               <button onClick={submitAnswer} disabled={uploading} style={s.btnSubmit(uploading)}>
@@ -173,29 +174,28 @@ export default function AudioGameArena() {
   )
 }
 
-// --- Styles (คงเดิม เพิ่มเฉพาะหัวข้อ) ---
+// --- Styles (คงเดิมที่คุณชอบ เพิ่มความชัดเจนของ Indicator) ---
 const s = {
   pageContainer: {
     padding: '20px', background: 'linear-gradient(120deg, #84fab0 0%, #8fd3f4 100%)',
     minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center'
   },
   mainCard: {
-    width: '100%', maxWidth: '550px', background: 'white', padding: '40px', borderRadius: '30px',
+    width: '100%', maxWidth: '550px', background: 'white', padding: '40px', borderRadius: '35px',
     boxShadow: '0 20px 60px rgba(0,0,0,0.1)', textAlign: 'center'
   },
-  // ป้ายบอกหัวข้อที่เพิ่มเข้ามา
   topicIndicator: {
     background: '#000', color: '#fff', padding: '15px', borderRadius: '20px',
     marginBottom: '10px', boxShadow: '0 10px 20px rgba(0,0,0,0.1)'
   },
-  audioBox: { background: '#f8f9fa', padding: '25px', borderRadius: '20px', margin: '20px 0' },
+  audioBox: { background: '#f8f9fa', padding: '25px', borderRadius: '20px', margin: '20px 0', border: '1px solid #eee' },
   btnRecord: {
-    width: '90px', height: '90px', borderRadius: '50%', background: 'linear-gradient(135deg, #FF6B6B 0%, #EE5253 100%)',
-    color: 'white', border: 'none', cursor: 'pointer', fontSize: '2.5rem'
+    padding: '15px 40px', borderRadius: '40px', background: 'linear-gradient(135deg, #FF6B6B 0%, #EE5253 100%)',
+    color: 'white', border: 'none', cursor: 'pointer', fontSize: '1.2rem', fontWeight: 'bold'
   },
   btnStop: {
-    width: '90px', height: '90px', borderRadius: '50%', background: '#2d3436',
-    color: 'white', border: 'none', cursor: 'pointer', fontSize: '2rem'
+    padding: '15px 40px', borderRadius: '40px', background: '#2d3436',
+    color: 'white', border: 'none', cursor: 'pointer', fontSize: '1.2rem', fontWeight: 'bold'
   },
   btnSubmit: (uploading) => ({
     width: '100%', marginTop: '20px', padding: '16px',
