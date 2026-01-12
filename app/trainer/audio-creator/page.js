@@ -5,14 +5,12 @@ import { QRCodeCanvas } from 'qrcode.react'
 
 export default function AudioMissionStudio() {
   const [userId, setUserId] = useState(null)
-  
-  // --- 1. ข้อมูลหลัก (เริ่มจากค่าว่าง) ---
   const [productName, setProductName] = useState('') 
   const [targets, setTargets] = useState({ early: 0, mid: 0, late: 0 })
   const [activePhase, setActivePhase] = useState('early')
   const [questionText, setQuestionText] = useState('')
   
-  // --- 2. รายการภารกิจ (โชว์เฉพาะที่กดสร้างในรอบนี้เท่านั้น) ---
+  // เก็บเฉพาะรายการที่เพิ่งสร้างในรอบนี้ (หน้าจอจะว่างเปล่าตอนเริ่ม)
   const [currentSessionMissions, setCurrentSessionMissions] = useState([]) 
 
   const [isRecording, setIsRecording] = useState(false)
@@ -22,7 +20,6 @@ export default function AudioMissionStudio() {
   const mediaRecorder = useRef(null)
   const audioChunks = useRef([])
 
-  // ดึงแค่ User ID อย่างเดียว ไม่ดึงประวัติ PIN/QR เก่า
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -31,36 +28,63 @@ export default function AudioMissionStudio() {
     init()
   }, [])
 
-  // --- ระบบอัดเสียงโจทย์ ---
+  // --- 🎙️ ระบบอัดเสียง (แก้ไขให้ Reset สถานะได้ถูกต้อง) ---
   const startRecording = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    mediaRecorder.current = new MediaRecorder(stream)
-    audioChunks.current = []
-    mediaRecorder.current.ondataavailable = (e) => audioChunks.current.push(e.data)
-    mediaRecorder.current.onstop = () => {
-      const blob = new Blob(audioChunks.current, { type: 'audio/wav' })
-      setAudioBlob(blob); setPreviewUrl(URL.createObjectURL(blob))
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaRecorder.current = new MediaRecorder(stream)
+      audioChunks.current = []
+      mediaRecorder.current.ondataavailable = (e) => audioChunks.current.push(e.data)
+      mediaRecorder.current.onstop = () => {
+        const blob = new Blob(audioChunks.current, { type: 'audio/wav' })
+        setAudioBlob(blob)
+        setPreviewUrl(URL.createObjectURL(blob))
+        setIsRecording(false) // ✨ สำคัญ: ปลดล็อกสถานะการอัดเมื่อหยุด
+      }
+      mediaRecorder.current.start()
+      setIsRecording(true)
+    } catch (err) {
+      alert("ไม่สามารถเข้าถึงไมโครโฟนได้")
     }
-    mediaRecorder.current.start(); setIsRecording(true)
   }
 
+  // --- 💾 ฟังก์ชันบันทึกโจทย์ (Reset ทุกอย่างเพื่อให้บันทึกข้อถัดไปได้) ---
   async function saveToLibrary() {
-    if (!audioBlob || !questionText || !productName) return alert("กรุณาระบุชื่อประกันและอัดเสียงก่อน")
+    // 🔍 แยกการแจ้งเตือนให้ชัดเจน
+    if (!productName.trim()) return alert("❌ กรุณาระบุชื่อแบบประกันด้านบนก่อนครับ")
+    if (!questionText.trim()) return alert("❌ กรุณาพิมพ์บทพูดลูกค้า (สคริปต์) ก่อน")
+    if (!audioBlob) return alert("❌ คุณยังไม่ได้อัดเสียงโจทย์เลยครับ")
+    
     setUploading(true)
     const fileName = `missions/${Date.now()}.wav`
     try {
-      await supabase.storage.from('recordings').upload(fileName, audioBlob)
+      const { error: uploadError } = await supabase.storage.from('recordings').upload(fileName, audioBlob)
+      if (uploadError) throw uploadError
+
       await supabase.from('questions').insert([{
-        question_text: questionText, category: activePhase,
-        product_type: productName, audio_question_url: fileName, user_id: userId
+        question_text: questionText,
+        category: activePhase,
+        product_type: productName,
+        audio_question_url: fileName,
+        user_id: userId
       }])
-      alert(`✅ บันทึกโจทย์ช่วง ${activePhase} เรียบร้อย!`)
-      setQuestionText(''); setAudioBlob(null); setPreviewUrl(null)
-    } catch (err) { alert(err.message) }
-    finally { setUploading(false) }
+
+      alert(`✅ บันทึกโจทย์เข้าหมวด ${activePhase} สำเร็จ! คุณสามารถอัดข้อถัดไปได้ทันที`)
+
+      // ✨ ล้างค่า (Reset) เพื่อให้ปุ่มกลับมาพร้อมอัดข้อถัดไป
+      setQuestionText('')
+      setAudioBlob(null)
+      setPreviewUrl(null)
+      setIsRecording(false)
+
+    } catch (err) {
+      alert("เกิดข้อผิดพลาด: " + err.message)
+    } finally {
+      setUploading(false)
+    }
   }
 
-  // --- 🚀 ปุ่มสร้างภารกิจ (จะทำให้แถว PIN/QR ปรากฏขึ้นมา) ---
+  // --- 🚀 ปุ่มสร้างภารกิจรวม (Create Mission) ---
   async function handleCreateMission() {
     if (!productName) return alert("กรุณาระบุชื่อแบบประกันก่อนสร้าง")
     const pin = Math.floor(100000 + Math.random() * 900000).toString()
@@ -74,7 +98,6 @@ export default function AudioMissionStudio() {
     }]).select().single()
 
     if (!error) {
-      // ✨ เพิ่มเข้า State เพื่อโชว์ในรายการด้านล่าง (เฉพาะตัวที่เพิ่งสร้าง)
       setCurrentSessionMissions([data, ...currentSessionMissions])
       alert("🚀 สร้างภารกิจสำเร็จ! รายการปรากฏด้านล่างแล้ว")
     }
@@ -85,50 +108,45 @@ export default function AudioMissionStudio() {
       <div style={s.card}>
         <h1 style={s.title}>🎙️ Audio Mission Studio</h1>
 
-        {/* --- ส่วนที่ 1: ใส่ชื่อสินค้า --- */}
         <div style={{marginBottom: '25px'}}>
           <label style={s.label}>📦 ชื่อแบบประกัน / ภารกิจ:</label>
-          <input 
-            type="text" 
-            value={productName} 
-            onChange={e => setProductName(e.target.value)} 
-            placeholder="เช่น ประกันสะสมทรัพย์ 10/1" 
-            style={s.inputMain} 
-          />
+          <input type="text" value={productName} onChange={e => setProductName(e.target.value)} placeholder="เช่น ประกันสะสมทรัพย์ 10/1" style={s.inputMain} />
         </div>
 
-        {/* --- ส่วนที่ 2: จะปรากฏเมื่อเริ่มพิมพ์ชื่อสินค้าเท่านั้น --- */}
         {productName.length > 0 && (
           <div style={{animation: 'fadeIn 0.5s'}}>
             <div style={s.setupCard}>
               <div style={s.targetGrid}>
-                <div style={s.targetItem}>
-                  <label style={s.miniLabel}>🎯 เป้าหมายต้นสาย</label>
-                  <input type="number" value={targets.early} onChange={e => setTargets({...targets, early: e.target.value})} style={s.inputTarget} />
-                </div>
-                <div style={s.targetItem}>
-                  <label style={s.miniLabel}>🎯 เป้าหมายกลางสาย</label>
-                  <input type="number" value={targets.mid} onChange={e => setTargets({...targets, mid: e.target.value})} style={s.inputTarget} />
-                </div>
-                <div style={s.targetItem}>
-                  <label style={s.miniLabel}>🎯 เป้าหมายปลายสาย</label>
-                  <input type="number" value={targets.late} onChange={e => setTargets({...targets, late: e.target.value})} style={s.inputTarget} />
-                </div>
+                {['early', 'mid', 'late'].map(p => (
+                  <div key={p} style={s.targetItem}>
+                    <label style={s.miniLabel}>🎯 เป้าหมาย{p==='early'?'ต้นสาย':p==='mid'?'กลางสาย':'ปลายสาย'}</label>
+                    <input type="number" value={targets[p]} onChange={e => setTargets({...targets, [p]: e.target.value})} style={s.inputTarget} />
+                  </div>
+                ))}
               </div>
             </div>
 
             <div style={s.recordBox}>
               <div style={s.phaseTabs}>
                 {['early', 'mid', 'late'].map(p => (
-                  <button key={p} onClick={() => setActivePhase(p)} style={s.tab(activePhase === p)}>
+                  <button key={p} onClick={() => {setActivePhase(p); setAudioBlob(null); setPreviewUrl(null);}} style={s.tab(activePhase === p)}>
                     {p === 'early' ? '1. ต้นสาย' : p === 'mid' ? '2. กลางสาย' : '3. ปลายสาย'}
                   </button>
                 ))}
               </div>
               <input type="text" value={questionText} onChange={e => setQuestionText(e.target.value)} placeholder={`พิมพ์บทพูดลูกค้าช่วง ${activePhase}...`} style={s.inputField} />
               <div style={s.controls}>
-                {!isRecording ? <button onClick={startRecording} style={s.btnRec}>🔴 อัดเสียงโจทย์</button> : <button onClick={() => mediaRecorder.current.stop()} style={s.btnStop}>⬛ หยุด</button>}
-                {previewUrl && <button onClick={saveToLibrary} disabled={uploading} style={s.btnSave}>บันทึกลงคลัง ✅</button>}
+                {/* ✨ ปุ่มจะสลับสถานะโดยอัตโนมัติเมื่อมีการบันทึกเสียงเสร็จ */}
+                {!isRecording && !previewUrl ? (
+                  <button onClick={startRecording} style={s.btnRec}>🔴 อัดเสียงโจทย์</button>
+                ) : isRecording ? (
+                  <button onClick={() => mediaRecorder.current.stop()} style={s.btnStop}>⬛ หยุดอัด</button>
+                ) : (
+                  <div style={{display:'flex', gap:'10px'}}>
+                    <button onClick={() => {setAudioBlob(null); setPreviewUrl(null);}} style={s.btnRetry}>🔄 อัดใหม่</button>
+                    <button onClick={saveToLibrary} disabled={uploading} style={s.btnSave}>{uploading ? 'กำลังบันทึก...' : 'บันทึกลงคลัง ✅'}</button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -136,18 +154,18 @@ export default function AudioMissionStudio() {
           </div>
         )}
 
-        {/* --- ส่วนที่ 3: รายการภารกิจ (จะโชว์เฉพาะที่เพิ่งกดสร้างในหน้านี้เท่านั้น) --- */}
+        {/* รายการภารกิจที่เพิ่งสร้างสำเร็จ */}
         {currentSessionMissions.length > 0 && (
           <div style={s.listSection}>
-            <h2 style={s.sectionTitle}>📋 รายการภารกิจที่เพิ่งสร้างสำเร็จ</h2>
+            <h2 style={s.sectionTitle}>📋 รายการภารกิจที่สร้างสำเร็จ</h2>
             {currentSessionMissions.map((m) => (
               <div key={m.id} style={s.missionRow}>
                 <div style={s.rowInfo}>
                   <div style={s.rowTitle}>{m.product_type}</div>
-                  <div style={s.rowSub}>เป้าหมาย: ต้น({m.targets?.early}) | กลาง({m.targets?.mid}) | ปลาย({m.targets?.late})</div>
+                  <div style={s.rowSub}>เป้าหมาย: ต้น({m.targets?.early || 0}) | กลาง({m.targets?.mid || 0}) | ปลาย({m.targets?.late || 0})</div>
                 </div>
                 <div style={s.rowPin}>
-                  <span style={{fontSize: '0.7rem', display: 'block', color: '#999'}}>PIN CODE</span>
+                  <span style={{fontSize: '0.7rem', color: '#999'}}>PIN CODE</span>
                   <strong>{m.pin}</strong>
                 </div>
                 <div style={s.rowQR}>
@@ -158,7 +176,7 @@ export default function AudioMissionStudio() {
           </div>
         )}
       </div>
-      <style jsx>{` @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } `}</style>
+      <style jsx>{` @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } `}</style>
     </div>
   )
 }
@@ -181,6 +199,7 @@ const s = {
   controls: { display: 'flex', justifyContent: 'center', gap: '20px' },
   btnRec: { background: '#ff4757', color: '#fff', border: 'none', padding: '12px 30px', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer' },
   btnStop: { background: '#000', color: '#fff', border: 'none', padding: '12px 30px', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer' },
+  btnRetry: { background: '#666', color: '#fff', border: 'none', padding: '12px 30px', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer' },
   btnSave: { background: '#28a745', color: '#fff', border: 'none', padding: '12px 30px', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer' },
   btnCreate: { width: '100%', padding: '20px', background: '#6c5ce7', color: '#fff', borderRadius: '20px', border: 'none', fontWeight: '900', fontSize: '1.3rem', cursor: 'pointer', marginBottom: '40px' },
   listSection: { marginTop: '40px', borderTop: '4px solid #f0f0f0', paddingTop: '30px' },
