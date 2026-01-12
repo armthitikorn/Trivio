@@ -1,555 +1,236 @@
 'use client'
-
 import { useState, useEffect, useRef } from 'react'
-
 import { supabase } from '@/lib/supabaseClient'
-
 import { useParams, useRouter } from 'next/navigation'
 
-
-
 export default function AudioGameArena() {
-
   const { id } = useParams()
-
   const router = useRouter()
 
-
-
+  // --- States ---
   const [questions, setQuestions] = useState([])
-
   const [currentIndex, setCurrentIndex] = useState(0)
-
   const [sessionInfo, setSessionInfo] = useState(null)
-
- 
-
+  
   const [isRecording, setIsRecording] = useState(false)
-
   const [audioUrl, setAudioUrl] = useState(null)
-
   const [previewUrl, setPreviewUrl] = useState(null)
-
   const [uploading, setUploading] = useState(false)
-
- 
-
+  
   const mediaRecorder = useRef(null)
 
-
-
   useEffect(() => {
-
-    if (id) fetchSessionAndQuestions()
-
+    if (id) fetchFullFlow();
   }, [id])
 
-
-
-  async function fetchSessionAndQuestions() {
-
+  // --- Logic ดึงข้อมูล 3 ขั้นตอน (Intro -> Objection -> Closing) ---
+  async function fetchFullFlow() {
     try {
-
+      // 1. ดึงข้อมูล Session ก่อน
       const { data: session, error: sError } = await supabase
-
         .from('game_sessions')
-
         .select('*')
-
         .eq('id', id)
-
         .single()
 
-
-
       if (sError || !session) return
-
-
-
       setSessionInfo(session)
 
+      // 2. ดึงคำถาม 3 ส่วนมาประกอบกัน
+      // ส่วนที่ 1: Introduction (ดึงมา 1 ข้อที่ตรงกับแผนก)
+      const { data: introQ } = await supabase.from('questions')
+        .select('*').eq('category', 'Introduction').eq('target_department', session.target_department).limit(1).single()
 
+      // ส่วนที่ 2: Objection (ดึงข้อโต้แย้งที่เทรนเนอร์กำหนดไว้ใน Session นี้)
+      // *หมายเหตุ: ใช้ชื่อหัวข้อจาก session มาค้นหาในตาราง questions*
+      const { data: objectionQ } = await supabase.from('questions')
+        .select('*').eq('text', session.objection_topic).limit(1).single()
 
-      const { data: qs } = await supabase
+      // ส่วนที่ 3: Closing (ดึงมา 1 ข้อ)
+      const { data: closingQ } = await supabase.from('questions')
+        .select('*').eq('category', 'Closing').eq('target_department', session.target_department).limit(1).single()
 
-        .from('questions')
+      // รวมร่างเป็น Array 3 ข้อ
+      const fullSequence = [
+        { ...introQ, phaseTitle: '1. บทนำ (Introduction)' },
+        { ...objectionQ, phaseTitle: `2. ตอบข้อโต้แย้ง: ${session.objection_topic}` },
+        { ...closingQ, phaseTitle: '3. ปิดการขาย (Closing Sale)' }
+      ].filter(q => q.id); // กรองเฉพาะข้อที่มีข้อมูลจริง
 
-        .select('*')
-
-        .eq('target_department', session.target_department)
-
-        .order('created_at', { ascending: true })
-
-
-
-      if (qs) {
-
-        // กรองเฉพาะข้อที่มีข้อมูล (เช็คทั้ง text, media_url, audio_question_url)
-
-        const validQs = qs.filter(q => {
-
-            const hasText = q.text && q.text.trim() !== ""
-
-            const hasMedia = q.media_url && q.media_url.trim() !== ""
-
-            const hasAudioQ = q.audio_question_url && q.audio_question_url.trim() !== ""
-
-            return hasText || hasMedia || hasAudioQ
-
-        })
-
-        setQuestions(validQs)
-
-      }
+      setQuestions(fullSequence)
 
     } catch (err) {
-
-      console.error("Catch Error:", err)
-
+      console.error("Fetch Error:", err)
     }
-
   }
 
-
-
+  // --- Recording Logic ---
   async function startRecording() {
-
     try {
-
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-
       mediaRecorder.current = new MediaRecorder(stream)
-
       const chunks = []
-
       mediaRecorder.current.ondataavailable = (e) => chunks.push(e.data)
-
       mediaRecorder.current.onstop = () => {
-
         const blob = new Blob(chunks, { type: 'audio/wav' })
-
         setAudioUrl(blob)
-
         setPreviewUrl(URL.createObjectURL(blob))
-
       }
-
       mediaRecorder.current.start()
-
       setIsRecording(true)
-
-    } catch (err) {
-
-      alert("กรุณาอนุญาตไมโครโฟน")
-
-    }
-
+    } catch (err) { alert("กรุณาอนุญาตไมโครโฟน") }
   }
-
-
 
   function stopRecording() {
-
     if (mediaRecorder.current) {
-
-        mediaRecorder.current.stop()
-
-        setIsRecording(false)
-
+      mediaRecorder.current.stop()
+      setIsRecording(false)
     }
-
   }
 
-
-
+  // --- Submission Logic ---
   async function submitAnswer() {
-
     if (!audioUrl) return
-
     setUploading(true)
 
-
-
-    const nickname = localStorage.getItem('player_name') || 'Warrior'
-
-    const fileName = `answers/${sessionInfo?.target_department}/${id}/${Date.now()}.wav`
-
-
+    const nickname = localStorage.getItem('player_name') || 'พนักงาน'
+    const phaseLabel = currentIndex === 0 ? 'intro' : currentIndex === 1 ? 'objection' : 'closing'
+    const fileName = `answers/${id}/${nickname}_${phaseLabel}_${Date.now()}.wav`
 
     try {
+      // 1. Upload ไป Storage
+      const { error: upError } = await supabase.storage.from('recordings').upload(fileName, audioUrl)
+      if (upError) throw upError
 
-        const { error: upError } = await supabase.storage.from('recordings').upload(fileName, audioUrl)
+      // 2. Insert ลงตาราง Answers
+      await supabase.from('answers').insert([{
+        session_id: id,
+        question_id: questions[currentIndex]?.id,
+        nickname: nickname,
+        audio_answer_url: fileName,
+        metadata: { phase: phaseLabel, topic: questions[currentIndex]?.phaseTitle }
+      }])
 
-        if (upError) throw upError
-
-
-
-        await supabase.from('answers').insert([{
-
-            session_id: id,
-
-            question_id: questions[currentIndex]?.id,
-
-            nickname: nickname,
-
-            audio_answer_url: fileName
-
-        }])
-
-
-
-        if (currentIndex < questions.length - 1) {
-
-            setCurrentIndex(currentIndex + 1)
-
-            setAudioUrl(null)
-
-            setPreviewUrl(null)
-
-        } else {
-
-            alert("🎉 จบการฝึกฝนแล้ว! สุดยอดมาก")
-
-            router.push('/play/audio')
-
-        }
-
+      // 3. ไปต่อหรือจบ
+      if (currentIndex < questions.length - 1) {
+        setCurrentIndex(currentIndex + 1)
+        setAudioUrl(null)
+        setPreviewUrl(null)
+      } else {
+        alert("🎉 ยอดเยี่ยม! คุณทำครบทั้ง 3 ขั้นตอนแล้ว")
+        router.push('/play/complete') // หรือหน้าที่คุณต้องการ
+      }
     } catch (err) {
-
-        alert("เกิดข้อผิดพลาด: " + err.message)
-
-    } finally {
-
-        setUploading(false)
-
-    }
-
+      alert("เกิดข้อผิดพลาด: " + err.message)
+    } finally { setUploading(false) }
   }
 
-
-
-  // --- ส่วนหน้าจอ Loading (ปรับสีให้เข้าธีม) ---
-
-  if (questions.length === 0) {
-
-    return (
-
-      <div style={s.pageContainer}>
-
-        <div style={s.loadingCard}>
-
-          <h2 style={{color: '#333'}}>⏳ กำลังโหลดสนามฝึก...</h2>
-
-          <p style={{opacity: 0.7, marginTop: '10px', color: '#555'}}>
-
-             (แผนก: {sessionInfo?.target_department || '...'})
-
-          </p>
-
-          <button onClick={() => router.back()} style={s.btnBack}>กลับหน้าหลัก</button>
-
-        </div>
-
-      </div>
-
-    )
-
-  }
-
-
+  if (questions.length === 0) return <div style={s.loading}>⏳ กำลังเตรียมสนามฝึก...</div>
 
   const currentQ = questions[currentIndex]
 
-
-
-  // Logic การหา Path ที่ฉลาด (Universal Path Finder)
-
-  const rawPath = currentQ?.text || currentQ?.media_url || currentQ?.audio_question_url || ""
-
-  let cleanPath = rawPath.startsWith('/') ? rawPath.substring(1) : rawPath
-
-  if (cleanPath && !cleanPath.startsWith('questions/')) {
-
-      cleanPath = `questions/${cleanPath}`
-
-  }
-
- 
-
-  const questionAudioUrl = supabase.storage.from('recordings').getPublicUrl(cleanPath).data.publicUrl
-
-
-
-  // --- UI หลัก (Soft & Clean Theme) ---
-
   return (
-
     <div style={s.pageContainer}>
-
-      <div style={s.mainCard}>
-
-        {/* Header */}
-
-        <p style={{ color: '#00b894', fontWeight: 'bold', letterSpacing: '1px' }}>
-
-          MISSION {currentIndex + 1} / {questions.length}
-
-        </p>
-
-       
-
-        <h2 style={{ margin: '15px 0', color: '#2d3436' }}>
-
-          {currentQ.question_text || `หมวด: ${currentQ.category}`}
-
-        </h2>
-
-       
-
-        {/* ส่วนเล่นเสียง */}
-
-        <div style={s.audioBox}>
-
-          <p style={{marginBottom: '10px', color: '#555'}}>🎧 ฟังเสียงลูกค้า:</p>
-
-          <audio key={questionAudioUrl} src={questionAudioUrl} controls style={{ width: '100%', borderRadius: '10px' }} />
-
-        </div>
-
-
-
-        <hr style={{ border: 'none', height: '1px', background: '#eee', margin: '30px 0' }} />
-
-
-
-        {/* ส่วนอัดเสียง */}
-
-        <div>
-
-          <h3 style={{color: '#2d3436'}}>🎙️ บันทึกเสียงตอบกลับ</h3>
-
-          <div style={{marginTop: '20px'}}>
-
-            {!isRecording ? (
-
-              <button onClick={startRecording} style={s.btnRecord}>🎤</button>
-
-            ) : (
-
-              <button onClick={stopRecording} style={s.btnStop}>⬛</button>
-
-            )}
-
+      {/* 🧭 Phase Indicator (Roadmap) */}
+      <div style={s.roadmap}>
+        {questions.map((_, i) => (
+          <div key={i} style={s.roadmapCircle(i <= currentIndex)}>
+            {i + 1}
           </div>
-
-         
-
-          {previewUrl && (
-
-            <div style={{ marginTop: '25px', animation: 'fadeIn 0.5s' }}>
-
-              <p style={{fontSize: '0.9rem', color: '#666', marginBottom: '10px'}}>เช็คเสียงของคุณ:</p>
-
-              <audio src={previewUrl} controls style={{ width: '100%', borderRadius: '10px' }} />
-
-             
-
-              <button onClick={submitAnswer} disabled={uploading} style={s.btnSubmit(uploading)}>
-
-                {uploading ? 'กำลังส่งข้อมูล...' : 'ส่งคำตอบแล้วไปต่อ ➡️'}
-
-              </button>
-
-            </div>
-
-          )}
-
-        </div>
-
+        ))}
       </div>
 
-     
+      <div style={s.mainCard}>
+        {/* หัวข้อ Phase */}
+        <div style={s.phaseBadge}>{currentQ.phaseTitle}</div>
+        
+        <h2 style={s.questionText}>
+          {currentQ.question_text || "กรุณาตอบกลับลูกค้าตามสถานการณ์"}
+        </h2>
 
-      {/* Animation Styles */}
+        {/* ส่วนเล่นเสียงลูกค้า */}
+        <div style={s.audioBox}>
+          <p style={{marginBottom: '10px', fontWeight: 'bold'}}>🎧 ลูกค้าพูดว่า:</p>
+          <audio 
+            key={currentQ.id} 
+            src={supabase.storage.from('recordings').getPublicUrl(currentQ.audio_question_url || currentQ.media_url).data.publicUrl} 
+            controls 
+            style={{ width: '100%' }} 
+          />
+        </div>
 
-      <style jsx>{`
+        <hr style={s.hr} />
 
-        @keyframes pulse { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.2); } 70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(0, 0, 0, 0); } 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); } }
+        {/* ส่วนอัดเสียงตอบกลับ */}
+        <div style={{textAlign: 'center'}}>
+          <p style={{fontWeight: '900', color: '#000', marginBottom: '15px'}}>🎙️ บันทึกเสียงของคุณ</p>
+          
+          {!isRecording ? (
+            <button onClick={startRecording} style={s.btnRecord}>🎤</button>
+          ) : (
+            <button onClick={stopRecording} style={s.btnStop}>⬛</button>
+          )}
 
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-      `}</style>
-
+          {previewUrl && (
+            <div style={s.previewArea}>
+              <audio src={previewUrl} controls style={{ width: '100%', marginBottom: '20px' }} />
+              <button onClick={submitAnswer} disabled={uploading} style={s.btnSubmit(uploading)}>
+                {uploading ? 'กำลังบันทึก...' : currentIndex === 2 ? '🏁 จบการทดสอบและส่งผล' : 'ไปขั้นตอนถัดไป ➡️'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
-
   )
-
 }
 
-
-
-// --- Styles Object (Soft Theme) ---
-
+// --- Styles (High Contrast & Professional) ---
 const s = {
-
   pageContainer: {
-
     padding: '20px',
-
-    fontFamily: "'Inter', sans-serif",
-
-    // ✨ Gradient พื้นหลัง: สีเขียวมิ้นต์ไล่ไปฟ้าอ่อน (สวย สบายตา)
-
-    background: 'linear-gradient(120deg, #84fab0 0%, #8fd3f4 100%)',
-
+    background: '#f0f2f5',
     minHeight: '100vh',
-
     display: 'flex',
-
-    justifyContent: 'center',
-
+    flexDirection: 'column',
     alignItems: 'center',
-
-    flexDirection: 'column'
-
+    fontFamily: 'sans-serif'
   },
-
-  mainCard: {
-
-    width: '100%',
-
-    maxWidth: '550px',
-
-    background: 'white',
-
-    color: '#333',
-
-    padding: '40px',
-
-    borderRadius: '30px',
-
-    boxShadow: '0 20px 60px rgba(0,0,0,0.1)', // เงานุ่มๆ
-
-    textAlign: 'center'
-
-  },
-
-  loadingCard: {
-
-    background: 'rgba(255, 255, 255, 0.9)',
-
-    padding: '40px',
-
-    borderRadius: '20px',
-
-    textAlign: 'center',
-
-    boxShadow: '0 10px 30px rgba(0,0,0,0.05)'
-
-  },
-
-  audioBox: {
-
-    background: '#f8f9fa',
-
-    padding: '25px',
-
-    borderRadius: '20px',
-
-    margin: '20px 0',
-
-    border: '1px solid #eef2f7'
-
-  },
-
-  btnRecord: {
-
-    width: '90px',
-
-    height: '90px',
-
-    borderRadius: '50%',
-
-    background: 'linear-gradient(135deg, #FF6B6B 0%, #EE5253 100%)', // สีแดงพาสเทล
-
-    color: 'white',
-
-    border: 'none',
-
-    cursor: 'pointer',
-
-    fontSize: '2.5rem',
-
-    boxShadow: '0 10px 20px rgba(238, 82, 83, 0.3)',
-
-    transition: 'transform 0.2s'
-
-  },
-
-  btnStop: {
-
-    width: '90px',
-
-    height: '90px',
-
-    borderRadius: '50%',
-
-    background: '#2d3436',
-
-    color: 'white',
-
-    border: 'none',
-
-    cursor: 'pointer',
-
-    fontSize: '2rem',
-
-    animation: 'pulse 2s infinite'
-
-  },
-
-  btnSubmit: (uploading) => ({
-
-    width: '100%',
-
-    marginTop: '20px',
-
-    padding: '16px',
-
-    background: uploading ? '#b2bec3' : 'linear-gradient(135deg, #00b894 0%, #00cec9 100%)', // สีเขียวมิ้นต์เข้ม
-
-    color: 'white',
-
-    border: 'none',
-
-    borderRadius: '15px',
-
-    fontWeight: 'bold',
-
-    fontSize: '1.1rem',
-
-    cursor: uploading ? 'default' : 'pointer',
-
-    boxShadow: '0 5px 15px rgba(0, 184, 148, 0.3)'
-
+  roadmap: { display: 'flex', gap: '15px', marginBottom: '30px' },
+  roadmapCircle: (active) => ({
+    width: '40px', height: '40px', borderRadius: '50%', 
+    background: active ? '#000' : '#ccc', color: '#fff',
+    display: 'flex', justifyContent: 'center', alignItems: 'center',
+    fontWeight: 'bold', transition: '0.3s'
   }),
-
-  btnBack: {
-
-    marginTop:'20px',
-
-    padding:'10px 25px',
-
-    cursor:'pointer',
-
-    borderRadius:'10px',
-
-    border:'1px solid #ddd',
-
-    background:'white',
-
-    color:'#555'
-
-  }
-
+  mainCard: {
+    width: '100%', maxWidth: '500px', background: '#fff',
+    padding: '40px', borderRadius: '30px', boxShadow: '0 15px 35px rgba(0,0,0,0.1)',
+    border: '2px solid #eee'
+  },
+  phaseBadge: {
+    display: 'inline-block', padding: '8px 16px', background: '#000',
+    color: '#fff', borderRadius: '12px', fontSize: '0.9rem', fontWeight: 'bold',
+    marginBottom: '20px'
+  },
+  questionText: { fontSize: '1.6rem', fontWeight: '900', color: '#000', marginBottom: '25px', lineHeight: '1.4' },
+  audioBox: { background: '#f8f9ff', padding: '20px', borderRadius: '20px', marginBottom: '30px', border: '1px solid #e0e6ed' },
+  hr: { border: 'none', height: '1px', background: '#eee', margin: '30px 0' },
+  btnRecord: {
+    width: '80px', height: '80px', borderRadius: '50%', background: '#ff4757',
+    color: '#fff', border: 'none', cursor: 'pointer', fontSize: '2rem',
+    boxShadow: '0 8px 15px rgba(255, 71, 87, 0.3)'
+  },
+  btnStop: {
+    width: '80px', height: '80px', borderRadius: '50%', background: '#2f3542',
+    color: '#fff', border: 'none', cursor: 'pointer', fontSize: '1.5rem',
+    animation: 'pulse 1.5s infinite'
+  },
+  previewArea: { marginTop: '25px', padding: '20px', background: '#f1f2f6', borderRadius: '20px' },
+  btnSubmit: (uploading) => ({
+    width: '100%', padding: '18px', background: uploading ? '#ccc' : '#000',
+    color: '#fff', border: 'none', borderRadius: '15px', fontWeight: 'bold',
+    fontSize: '1.1rem', cursor: uploading ? 'default' : 'pointer'
+  }),
+  loading: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontWeight: 'bold', fontSize: '1.2rem' }
 }
