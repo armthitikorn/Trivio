@@ -3,23 +3,17 @@ import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { QRCodeCanvas } from 'qrcode.react'
 
-export default function PerfectTrainerAudioCreator() {
+export default function AudioMissionStudio() {
   const [userId, setUserId] = useState(null)
-  const [productType, setProductType] = useState('') // เริ่มต้นเป็นค่าว่าง
-  const [targetDept, setTargetDept] = useState('UOB')
-  const [targetLevel, setTargetLevel] = useState('Nursery')
+  const [productName, setProductName] = useState('') // ชื่อแบบประกัน เช่น "ประกันสะสมทรัพย์"
   
-  // เป้าหมายเริ่มต้น (จะปรากฏเมื่อระบุชื่อสินค้า)
-  const [targets, setTargets] = useState({
-    Introduction: 0,
-    Objection: 0,
-    Closing: 0
-  })
+  // 1. กำหนดเป้าหมายอิสระ (ต้นสาย, กลางสาย, ปลายสาย)
+  const [targets, setTargets] = useState({ early: 0, mid: 0, late: 0 })
 
-  const [activeCategory, setActiveCategory] = useState('Introduction')
-  const [questionTitle, setQuestionTitle] = useState('')
-  const [myQuestions, setMyQuestions] = useState([])
-  const [sessionsList, setSessionsList] = useState([]) 
+  const [activePhase, setActivePhase] = useState('early') // ระยะที่กำลังอัดเสียง
+  const [questionText, setQuestionText] = useState('')
+  const [recordedQuestions, setRecordedQuestions] = useState([]) // โจทย์ที่อัดในรอบนี้
+  const [missions, setMissions] = useState([]) // รายการภารกิจที่สร้างสำเร็จแล้ว
 
   const [isRecording, setIsRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState(null)
@@ -29,24 +23,20 @@ export default function PerfectTrainerAudioCreator() {
   const audioChunks = useRef([])
 
   useEffect(() => {
-    const initData = async () => {
+    const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setUserId(user.id)
-        fetchData(user.id)
+        // ดึงรายการภารกิจเก่ามาโชว์ที่รายการด้านล่าง
+        const { data } = await supabase.from('game_sessions').select('*').order('created_at', { ascending: false })
+        setMissions(data || [])
       }
     }
-    initData()
-  }, [targetDept, targetLevel])
+    init()
+  }, [])
 
-  async function fetchData(uid) {
-    const { data: qs } = await supabase.from('questions').select('*').eq('user_id', uid).eq('target_department', targetDept)
-    setMyQuestions(qs || [])
-    const { data: ss } = await supabase.from('game_sessions').select('*').eq('user_id', uid).order('created_at', { ascending: false })
-    setSessionsList(ss || [])
-  }
-
-  async function startRecording() {
+  // --- ระบบอัดเสียงโจทย์ ---
+  const startRecording = async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     mediaRecorder.current = new MediaRecorder(stream)
     audioChunks.current = []
@@ -58,138 +48,151 @@ export default function PerfectTrainerAudioCreator() {
     mediaRecorder.current.start(); setIsRecording(true)
   }
 
-  async function saveQuestion() {
-    if (!audioBlob || !questionTitle) return alert("กรุณาระบุสคริปต์และอัดเสียงก่อน")
+  // บันทึกโจทย์ลงคลัง
+  async function saveToLibrary() {
+    if (!audioBlob || !questionText || !productName) return alert("กรุณาระบุชื่อประกัน สคริปต์ และอัดเสียง")
     setUploading(true)
-    const fileName = `questions/${Date.now()}.wav`
+    const fileName = `missions/${Date.now()}.wav`
     try {
       await supabase.storage.from('recordings').upload(fileName, audioBlob)
-      await supabase.from('questions').insert([{
-        question_text: questionTitle, category: activeCategory, product_type: productType,
-        target_department: targetDept, target_level: targetLevel,
-        audio_question_url: fileName, user_id: userId
-      }])
-      alert(`บันทึกโจทย์หมวด ${activeCategory} เรียบร้อย!`)
-      setQuestionTitle(''); setAudioBlob(null); setPreviewUrl(null)
-      fetchData(userId)
+      const { data } = await supabase.from('questions').insert([{
+        question_text: questionText,
+        category: activePhase, // early, mid, late
+        product_type: productName,
+        audio_question_url: fileName,
+        user_id: userId
+      }]).select().single()
+      
+      setRecordedQuestions([...recordedQuestions, data])
+      alert(`บันทึกโจทย์ ${activePhase} สำเร็จ!`)
+      setQuestionText(''); setAudioBlob(null); setPreviewUrl(null)
     } catch (err) { alert(err.message) }
     finally { setUploading(false) }
   }
 
-  async function generateMission() {
-    if (!productType) return alert("กรุณาระบุชื่อสินค้าก่อนสร้างภารกิจ")
-    const newPIN = Math.floor(100000 + Math.random() * 900000).toString()
-    const { error } = await supabase.from('game_sessions').insert([{
-      pin: newPIN, user_id: userId, product_type: productType,
-      target_department: targetDept, target_level: targetLevel,
-      targets: targets, is_active: true
-    }])
+  // --- ปุ่มกดสร้างภารกิจ (Create Mission) ---
+  async function handleCreateMission() {
+    if (!productName) return alert("กรุณาระบุชื่อแบบประกัน")
+    const pin = Math.floor(100000 + Math.random() * 900000).toString()
+    
+    const { data, error } = await supabase.from('game_sessions').insert([{
+      pin: pin,
+      product_type: productName,
+      targets: targets, // เก็บค่า {early: 4, mid: 5, late: 7}
+      user_id: userId,
+      is_active: true
+    }]).select().single()
+
     if (!error) {
-        alert(`🚀 ภารกิจ "${productType}" ถูกสร้างแล้ว! ดูรายการได้ที่ด้านล่าง`)
-        fetchData(userId)
+      setMissions([data, ...missions])
+      alert("🚀 สร้างภารกิจสำเร็จ! รายการปรากฏที่ด้านล่างแล้ว")
+      // Reset หน้าจอเพื่อทำประกันตัวถัดไป
+      setProductName(''); setTargets({ early: 0, mid: 0, late: 0 }); setRecordedQuestions([])
     }
   }
 
-  const countInCat = (catId) => myQuestions.filter(q => q.category === catId && q.product_type === productType).length
+  const countInPhase = (p) => recordedQuestions.filter(q => q.category === p).length
 
   return (
     <div style={s.page}>
       <div style={s.card}>
         <h1 style={s.title}>🎙️ Audio Mission Studio</h1>
 
-        {/* --- ขั้นตอนที่ 1: ใส่ชื่อสินค้า (เสมอ) --- */}
-        <div style={{marginBottom: '30px'}}>
-            <label style={s.label}>📦 ชื่อภารกิจ / ชื่อสินค้า (เช่น ประกันสะสมทรัพย์ 1):</label>
-            <input 
-                type="text" 
-                value={productType} 
-                onChange={e => setProductType(e.target.value)} 
-                placeholder="พิมพ์ชื่อสินค้าเพื่อเริ่มตั้งค่า..." 
-                style={s.inputMain} 
-            />
+        {/* 1. ตั้งค่าหัวข้อและเป้าหมายอิสระ */}
+        <div style={s.setupCard}>
+          <label style={s.label}>📋 ชื่อแบบประกัน / ภารกิจ:</label>
+          <input type="text" value={productName} onChange={e => setProductName(e.target.value)} placeholder="เช่น ประกันสะสมทรัพย์ 10/1" style={s.inputMain} />
+          
+          <div style={s.targetGrid}>
+            <div style={s.targetItem}>
+              <label>🎯 เป้าหมายต้นสาย</label>
+              <input type="number" value={targets.early} onChange={e => setTargets({...targets, early: e.target.value})} style={s.inputTarget} />
+            </div>
+            <div style={s.targetItem}>
+              <label>🎯 เป้าหมายกลางสาย</label>
+              <input type="number" value={targets.mid} onChange={e => setTargets({...targets, mid: e.target.value})} style={s.inputTarget} />
+            </div>
+            <div style={s.targetItem}>
+              <label>🎯 เป้าหมายปลายสาย</label>
+              <input type="number" value={targets.late} onChange={e => setTargets({...targets, late: e.target.value})} style={s.inputTarget} />
+            </div>
+          </div>
         </div>
 
-        {/* --- ขั้นตอนที่ 2: จะปรากฏเมื่อมีชื่อสินค้าเท่านั้น --- */}
-        {productType.length > 0 && (
-          <div style={{animation: 'fadeIn 0.5s'}}>
-            <div style={s.setupBox}>
-              <div style={{flex: 1}}><label style={s.label}>🎯 เป้าหมาย Intro:</label><input type="number" value={targets.Introduction} onChange={e=>setTargets({...targets, Introduction: e.target.value})} style={s.inputTarget} /></div>
-              <div style={{flex: 1}}><label style={s.label}>🎯 เป้าหมาย Objection:</label><input type="number" value={targets.Objection} onChange={e=>setTargets({...targets, Objection: e.target.value})} style={s.inputTarget} /></div>
-              <div style={{flex: 1}}><label style={s.label}>🎯 เป้าหมาย Closing:</label><input type="number" value={targets.Closing} onChange={e=>setTargets({...targets, Closing: e.target.value})} style={s.inputTarget} /></div>
+        {/* 2. ส่วนอัดเสียงโจทย์ */}
+        {productName && (
+          <div style={s.recordBox}>
+            <div style={s.phaseTabs}>
+              {['early', 'mid', 'late'].map(p => (
+                <button key={p} onClick={() => setActivePhase(p)} style={s.tab(activePhase === p)}>
+                  {p === 'early' ? 'ต้นสาย' : p === 'mid' ? 'กลางสาย' : 'ปลายสาย'}
+                  <div style={{fontSize:'0.7rem'}}>อัดแล้ว: {countInCat(p, recordedQuestions)}</div>
+                </button>
+              ))}
             </div>
 
-            <div style={s.recordSection}>
-              <div style={s.catGroup}>
-                {['Introduction', 'Objection', 'Closing'].map((cat) => (
-                  <button key={cat} onClick={() => setActiveCategory(cat)} style={s.catBtn(activeCategory === cat)}>
-                    {cat === 'Introduction' ? '1. บทนำ' : cat === 'Objection' ? '2. ข้อโต้แย้ง' : '3. ปิดการขาย'}
-                    <div style={{fontSize: '0.7rem'}}>สะสมแล้ว: {countInCat(cat)} / {targets[cat]}</div>
-                  </button>
-                ))}
-              </div>
-
-              <input type="text" value={questionTitle} onChange={e=>setQuestionTitle(e.target.value)} placeholder={`ระบุบทพูดลูกค้าหมวด ${activeCategory}...`} style={s.inputField} />
-
-              <div style={s.recordControls}>
-                {!isRecording ? <button onClick={startRecording} style={s.btnRec}>🔴 อัดเสียงโจทย์</button> : <button onClick={()=>mediaRecorder.current.stop()} style={s.btnStop}>⬛ หยุด</button>}
-                {previewUrl && <button onClick={saveQuestion} disabled={uploading} style={s.btnSave}>บันทึกลงหมวดนี้ ✅</button>}
-              </div>
+            <input type="text" value={questionText} onChange={e => setQuestionText(e.target.value)} placeholder={`พิมพ์บทพูดลูกค้าช่วง ${activePhase}...`} style={s.inputField} />
+            
+            <div style={s.controls}>
+              {!isRecording ? <button onClick={startRecording} style={s.btnRec}>🔴 อัดเสียงโจทย์</button> : <button onClick={() => mediaRecorder.current.stop()} style={s.btnStop}>⬛ หยุด</button>}
+              {previewUrl && <button onClick={saveToLibrary} disabled={uploading} style={s.btnSave}>บันทึกเข้าคลัง ✅</button>}
             </div>
-
-            <button onClick={generateMission} style={s.btnGenerate}>🚀 ยืนยันและสร้าง PIN / QR Code</button>
           </div>
         )}
 
-        {/* --- ขั้นตอนที่ 3: รายการภารกิจ (ซ่อนไว้จนกว่าจะมีข้อมูล) --- */}
-        {sessionsList.length > 0 && (
-          <div style={{...s.missionContainer, animation: 'fadeIn 0.8s'}}>
-            <div style={s.sectionTitle}>📋 รายการภารกิจที่เปิดใช้งาน (Mission List)</div>
-            {sessionsList.map((session) => (
-              <div key={session.id} style={s.missionRow}>
-                <div style={{flex: 2}}>
-                  <div style={s.missionName}>{session.product_type}</div>
-                  <div style={s.missionSub}>เป้าหมาย: I:{session.targets?.Introduction} | O:{session.targets?.Objection} | C:{session.targets?.Closing}</div>
-                </div>
-                <div style={s.pinSection}>
-                  <span style={s.miniLabel}>เลข PIN</span>
-                  <div style={s.pinDisplay}>{session.pin}</div>
-                </div>
-                <div style={s.qrSection}>
-                  <QRCodeCanvas value={`${window.location.origin}/play/audio/${session.id}`} size={70} />
-                </div>
+        <button onClick={handleCreateMission} style={s.btnCreate}>🚀 ยืนยันและสร้างภารกิจ (Create Mission)</button>
+
+        {/* 3. รายการภารกิจที่สร้างแล้ว (โชว์เป็นแถวพร้อม QR) */}
+        <div style={s.listSection}>
+          <h2 style={{fontWeight:'900', borderBottom:'3px solid #000', paddingBottom:'10px'}}>📋 รายการแบบทดสอบที่พร้อมใช้งาน</h2>
+          {missions.map((m, idx) => (
+            <div key={m.id} style={s.missionRow}>
+              <div style={s.rowInfo}>
+                <div style={s.rowTitle}>โจทย์ที่ {missions.length - idx}: {m.product_type}</div>
+                <div style={s.rowSub}>เป้าหมายการซ้อม: ต้น({m.targets?.early}) | กลาง({m.targets?.mid}) | ปลาย({m.targets?.late})</div>
               </div>
-            ))}
-          </div>
-        )}
+              <div style={s.rowPin}>
+                PIN: <strong>{m.pin}</strong>
+              </div>
+              <div style={s.rowQR}>
+                <QRCodeCanvas value={`${window.location.origin}/play/audio/${m.id}`} size={80} />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-      <style jsx>{` @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } `}</style>
     </div>
   )
+}
+
+function countInCat(phase, list) {
+    return list.filter(q => q.category === phase).length;
 }
 
 const s = {
   page: { background: '#f0f2f5', minHeight: '100vh', padding: '40px 20px', fontFamily: "sans-serif" },
   card: { maxWidth: '1000px', margin: '0 auto', background: 'white', padding: '40px', borderRadius: '40px', boxShadow: '0 20px 60px rgba(0,0,0,0.1)' },
-  title: { color: '#000', textAlign: 'center', fontWeight: '900', fontSize: '2.5rem', marginBottom: '40px' },
-  inputMain: { width: '100%', padding: '20px', borderRadius: '20px', border: '3px solid #6c5ce7', fontWeight: 'bold', fontSize: '1.2rem', outline: 'none' },
-  setupBox: { display: 'flex', gap: '15px', background: '#f8f9ff', padding: '20px', borderRadius: '25px', marginBottom: '25px', border: '1px solid #e0e6ed' },
-  label: { fontWeight: '900', color: '#333', fontSize: '0.9rem', marginBottom: '8px', display: 'block' },
-  inputTarget: { width: '100%', padding: '12px', borderRadius: '12px', border: '2px solid #ddd', fontWeight: 'bold', textAlign: 'center' },
-  recordSection: { border: '3px dashed #eee', padding: '30px', borderRadius: '30px', background: '#fafafa', marginBottom: '30px' },
-  catGroup: { display: 'flex', gap: '10px', marginBottom: '20px', justifyContent: 'center' },
-  catBtn: (active) => ({ padding: '10px 20px', borderRadius: '15px', border: active ? 'none' : '2px solid #ddd', background: active ? '#6c5ce7' : '#fff', color: active ? '#fff' : '#666', fontWeight: 'bold', cursor: 'pointer', transition: '0.3s', textAlign: 'center', flex: 1 }),
-  inputField: { width: '100%', padding: '18px', borderRadius: '15px', border: '2px solid #ddd', marginBottom: '20px', fontWeight: 'bold' },
-  recordControls: { display: 'flex', justifyContent: 'center', gap: '20px' },
-  btnRec: { background: '#ff4757', color: 'white', padding: '12px 30px', borderRadius: '30px', border: 'none', fontWeight: 'bold', cursor: 'pointer' },
-  btnStop: { background: '#000', color: 'white', padding: '12px 30px', borderRadius: '30px', border: 'none', fontWeight: 'bold', cursor: 'pointer' },
-  btnSave: { background: '#28a745', color: 'white', padding: '12px 30px', borderRadius: '30px', border: 'none', fontWeight: 'bold', cursor: 'pointer' },
-  btnGenerate: { width: '100%', padding: '20px', background: '#000', color: 'white', border: 'none', borderRadius: '20px', fontWeight: '900', fontSize: '1.2rem', cursor: 'pointer', marginBottom: '40px' },
-  sectionTitle: { fontWeight: '900', fontSize: '1.1rem', color: '#6c5ce7', marginBottom: '15px' },
-  missionRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff', padding: '25px', borderRadius: '25px', marginBottom: '15px', border: '1px solid #eee', boxShadow: '0 5px 15px rgba(0,0,0,0.05)' },
-  missionName: { fontSize: '1.5rem', fontWeight: '900', color: '#000' },
-  missionSub: { fontSize: '0.85rem', color: '#888' },
-  pinSection: { textAlign: 'center', flex: 1 },
-  miniLabel: { fontSize: '0.7rem', color: '#999', display: 'block' },
-  pinDisplay: { fontSize: '2rem', fontWeight: '900', color: '#6c5ce7' },
-  qrSection: { flex: 1, display: 'flex', justifyContent: 'flex-end' }
+  title: { textAlign: 'center', fontWeight: '900', fontSize: '2.2rem', marginBottom: '30px' },
+  setupCard: { background: '#f8f9ff', padding: '30px', borderRadius: '30px', border: '2px solid #e0e6ed', marginBottom: '30px' },
+  label: { fontWeight: '900', display: 'block', marginBottom: '10px' },
+  inputMain: { width: '100%', padding: '15px', borderRadius: '15px', border: '2px solid #000', fontSize: '1.2rem', fontWeight: 'bold' },
+  targetGrid: { display: 'flex', gap: '20px', marginTop: '20px' },
+  targetItem: { flex: 1 },
+  inputTarget: { width: '100%', padding: '10px', borderRadius: '10px', border: '2px solid #ddd', textAlign: 'center', fontWeight: 'bold' },
+  recordBox: { border: '3px dashed #eee', padding: '30px', borderRadius: '30px', marginBottom: '30px' },
+  phaseTabs: { display: 'flex', gap: '10px', marginBottom: '20px' },
+  tab: (active) => ({ flex: 1, padding: '15px', borderRadius: '15px', border: active ? 'none' : '1px solid #ddd', background: active ? '#6c5ce7' : '#fff', color: active ? '#fff' : '#000', fontWeight: 'bold', cursor: 'pointer' }),
+  inputField: { width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' },
+  controls: { display: 'flex', justifyContent: 'center', gap: '15px' },
+  btnRec: { background: '#ff4757', color: '#fff', border: 'none', padding: '12px 25px', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer' },
+  btnStop: { background: '#000', color: '#fff', border: 'none', padding: '12px 25px', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer' },
+  btnSave: { background: '#28a745', color: '#fff', border: 'none', padding: '12px 25px', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer' },
+  btnCreate: { width: '100%', padding: '20px', background: '#000', color: '#fff', borderRadius: '20px', border: 'none', fontWeight: '900', fontSize: '1.3rem', cursor: 'pointer', marginBottom: '50px' },
+  listSection: { marginTop: '20px' },
+  missionRow: { display: 'flex', alignItems: 'center', background: '#fff', padding: '20px', borderRadius: '25px', marginBottom: '15px', border: '1px solid #eee', boxShadow: '0 5px 15px rgba(0,0,0,0.05)' },
+  rowInfo: { flex: 2 },
+  rowTitle: { fontSize: '1.3rem', fontWeight: '900' },
+  rowSub: { fontSize: '0.85rem', color: '#666' },
+  rowPin: { flex: 1, textAlign: 'center', fontSize: '1.2rem', borderLeft: '1px solid #eee', borderRight: '1px solid #eee' },
+  rowQR: { flex: 1, display: 'flex', justifyContent: 'flex-end' }
 }
