@@ -1,20 +1,24 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-// ✨ อย่าลืมรัน npm install qrcode.react นะครับ
 import { QRCodeCanvas } from 'qrcode.react'
 
 export default function PerfectTrainerAudioCreator() {
-  // --- States ตั้งค่าโจทย์ (คงเดิม 100%) ---
+  // --- States เดิม ---
   const [targetDept, setTargetDept] = useState('UOB')
   const [category, setCategory] = useState('Introduction')
   const [targetLevel, setTargetLevel] = useState('Nursery')
-  const [targetCount, setTargetCount] = useState(5)
+  
+  // ✅ เก็บเป้าหมายแยกหมวดหมู่
+  const [targets, setTargets] = useState({
+    Introduction: 5,
+    Objection: 5,
+    Closing: 5
+  })
+
   const [questionTitle, setQuestionTitle] = useState('')
   const [userId, setUserId] = useState(null)
   const [myQuestions, setMyQuestions] = useState([])
-
-  // --- States สำหรับ PIN และ QR Code ---
   const [generatedPIN, setGeneratedPIN] = useState(null)
   const [showQR, setShowQR] = useState(false)
 
@@ -26,16 +30,51 @@ export default function PerfectTrainerAudioCreator() {
   const mediaRecorder = useRef(null)
   const audioChunks = useRef([])
 
+  // ✅ 1. แก้ไข useEffect: ให้โหลดทั้งคำถามและเป้าหมายจาก Supabase
   useEffect(() => {
     const initData = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setUserId(user.id)
         fetchMyQuestions(user.id, targetDept, targetLevel)
+        fetchTargets(user.id, targetDept, targetLevel) // ดึงเป้าหมายที่เคยบันทึกไว้
       }
     }
     initData()
   }, [targetDept, targetLevel])
+
+  // ✅ 2. ฟังก์ชันดึงค่าเป้าหมายจาก Supabase
+  async function fetchTargets(uid, dept, level) {
+    const { data, error } = await supabase
+      .from('target_settings')
+      .select('targets')
+      .eq('user_id', uid)
+      .eq('department', dept)
+      .eq('level', level)
+      .single()
+
+    if (data && data.targets) {
+      setTargets(data.targets)
+    } else {
+      // ถ้าไม่เคยบันทึก ให้ใช้ค่าเริ่มต้น
+      setTargets({ Introduction: 5, Objection: 5, Closing: 5 })
+    }
+  }
+
+  // ✅ 3. ฟังก์ชันบันทึกเป้าหมายลง Supabase (Upsert)
+  async function saveTargetsToSupabase(newTargets) {
+    if (!userId) return;
+    const { error } = await supabase
+      .from('target_settings')
+      .upsert({
+        user_id: userId,
+        department: targetDept,
+        level: targetLevel,
+        targets: newTargets
+      }, { onConflict: 'user_id,department,level' }) // ป้องกันการสร้างแถวซ้ำ
+
+    if (error) console.error("Error saving targets:", error.message)
+  }
 
   async function fetchMyQuestions(uid, dept, level) {
     const { data } = await supabase
@@ -48,12 +87,10 @@ export default function PerfectTrainerAudioCreator() {
     setMyQuestions(data || [])
   }
 
-  // --- ฟังก์ชันสร้าง PIN (กดที่ปุ่มเพื่อสร้างเลข 6 หลัก) ---
+  // --- ฟังก์ชันสร้าง PIN (ตรรกะเดิม) ---
   async function generateGamePIN() {
     if (myQuestions.length === 0) return alert("กรุณาสร้างโจทย์อย่างน้อย 1 ข้อก่อนสร้าง PIN ครับ")
-    
     const newPIN = Math.floor(100000 + Math.random() * 900000).toString()
-    
     const { error } = await supabase.from('game_sessions').insert([{
       pin: newPIN,
       user_id: userId,
@@ -62,16 +99,14 @@ export default function PerfectTrainerAudioCreator() {
       target_level: targetLevel,
       is_active: true
     }])
-
-    if (error) {
-        alert("Error: " + error.message)
-    } else {
+    if (error) alert("Error: " + error.message)
+    else {
         setGeneratedPIN(newPIN)
-        alert(`✅ สร้าง PIN สำเร็จ: ${newPIN}\nแจ้งเลขนี้ให้พนักงานกรอกได้เลยครับ`)
+        alert(`✅ สร้าง PIN สำเร็จ: ${newPIN}`)
     }
   }
 
-  // --- ระบบอัดเสียง (ตรรกะเดิมที่สมบูรณ์) ---
+  // --- ระบบอัดเสียง (ตรรกะเดิม) ---
   async function startRecording() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     mediaRecorder.current = new MediaRecorder(stream)
@@ -98,6 +133,14 @@ export default function PerfectTrainerAudioCreator() {
 
   const countInCat = (catId) => myQuestions.filter(q => q.category === catId).length
 
+  // ✅ ปรับปรุง: เมื่อเปลี่ยนเป้าหมาย ให้บันทึกลงฐานข้อมูลทันที
+  const handleTargetChange = (val) => {
+    const newCount = parseInt(val) || 0
+    const updatedTargets = { ...targets, [category]: newCount }
+    setTargets(updatedTargets)
+    saveTargetsToSupabase(updatedTargets) // บันทึกอัตโนมัติ
+  }
+
   return (
     <div style={s.page}>
       <div style={s.card}>
@@ -109,12 +152,21 @@ export default function PerfectTrainerAudioCreator() {
             </div>
         </div>
 
-        {/* ส่วนตั้งค่าโจทย์ */}
         <div style={s.grid}>
           <div><label style={s.label}>🏢 แผนก:</label><select value={targetDept} onChange={e=>setTargetDept(e.target.value)} style={s.select}>{['UOB','AYCAP','ttb','Krungsri','Agent','Broker'].map(d=><option key={d}>{d}</option>)}</select></div>
           <div><label style={s.label}>⭐ ระดับ:</label><select value={targetLevel} onChange={e=>setTargetLevel(e.target.value)} style={s.select}>{['Nursery','Rising Star','Legend'].map(l=><option key={l}>{l}</option>)}</select></div>
           <div><label style={s.label}>📚 Section:</label><select value={category} onChange={e=>setCategory(e.target.value)} style={s.select}><option value="Introduction">1. Intro</option><option value="Objection">2. Objection</option><option value="Closing">3. Closing</option></select></div>
-          <div><label style={s.label}>🎯 เป้าหมาย:</label><input type="number" value={targetCount} onChange={e=>setTargetCount(e.target.value)} style={s.select} /></div>
+          
+          {/* ✅ Input เป้าหมายที่ดึงค่าจาก DB และบันทึกกลับอัตโนมัติ */}
+          <div>
+            <label style={s.label}>🎯 เป้าหมาย:</label>
+            <input 
+              type="number" 
+              value={targets[category]} 
+              onChange={e=>handleTargetChange(e.target.value)} 
+              style={s.select} 
+            />
+          </div>
         </div>
 
         <input type="text" value={questionTitle} onChange={e=>setQuestionTitle(e.target.value)} placeholder="ระบุสคริปต์โจทย์ลูกค้า..." style={s.input} />
@@ -134,22 +186,20 @@ export default function PerfectTrainerAudioCreator() {
           <h3 style={{color:'#000', fontWeight:'900'}}>📊 คลังโจทย์แผนก {targetDept}</h3>
           <div style={s.flexGap}>
              {['Introduction','Objection','Closing'].map(c => (
-               <div key={c} style={s.statBox(countInCat(c), targetCount)}>
-                 {c}: {countInCat(c)}/{targetCount}
+               <div key={c} style={s.statBox(countInCat(c), targets[c])}>
+                 {c}: {countInCat(c)}/{targets[c]}
                </div>
              ))}
           </div>
         </div>
       </div>
 
-      {/* --- QR Code Modal: โชว์เพื่อให้พนักงานสแกนเข้าหน้าลงทะเบียน --- */}
+      {/* --- QR Code Modal --- */}
       {showQR && (
         <div style={s.overlay} onClick={() => setShowQR(false)}>
           <div style={s.modal} onClick={e => e.stopPropagation()}>
             <h2 style={{color: '#000', fontWeight: '900'}}>สแกนเพื่อลงทะเบียน</h2>
-            <p style={{color: '#666', marginBottom: '20px'}}>พนักงานสแกนแล้วรอรับเลข PIN จากเทรนเนอร์</p>
             <div style={s.qrBox}>
-              {/* QR นำทางไปที่หน้าลงทะเบียน /play/audio โดยตรง */}
               <QRCodeCanvas value={`${window.location.origin}/play/audio`} size={250} level={"H"} />
             </div>
             <button onClick={() => setShowQR(false)} style={s.btnClose}>ปิดหน้าต่าง</button>
@@ -160,6 +210,7 @@ export default function PerfectTrainerAudioCreator() {
   )
 }
 
+// --- Styles (คงเดิมทุกประการ) ---
 const s = {
   page: { background: '#f0f2f5', minHeight: '100vh', padding: '40px 20px', fontFamily: 'sans-serif' },
   card: { maxWidth: '950px', margin: '0 auto', background: 'white', padding: '40px', borderRadius: '40px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' },
