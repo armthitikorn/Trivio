@@ -1,10 +1,10 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { QRCodeCanvas } from 'qrcode.react'
 
 export default function PerfectTrainerAudioCreator() {
-  // --- 1. รายชื่อ Scenario ทั้งหมดที่คุณกำหนดมา ---
+  // 1. กำหนดรายชื่อ Scenario ให้แน่นอน (1-8 และ 10)
   const allScenarios = [
     'Scenario 1', 'Scenario 2', 'Scenario 3', 'Scenario 4', 
     'Scenario 5', 'Scenario 6', 'Scenario 7', 'Scenario 8', 'Scenario 10'
@@ -14,12 +14,11 @@ export default function PerfectTrainerAudioCreator() {
   const [category, setCategory] = useState('Scenario 1')
   const [targetLevel, setTargetLevel] = useState('Nursery')
   
-  // ✅ ตั้งค่าเป้าหมายเริ่มต้นให้ครบทุก Scenario ทันที
-  const [targets, setTargets] = useState(
-    allScenarios.reduce((acc, curr) => ({ ...acc, [curr]: 5 }), {})
-  )
+  // ✅ แก้ไข: ตั้งค่าเริ่มต้นของ Targets ให้เป็น Object ที่มีทุก Scenario ทันที
+  const [targets, setTargets] = useState(() => {
+    return allScenarios.reduce((acc, curr) => ({ ...acc, [curr]: 5 }), {});
+  });
 
-  // ✅ คู่มือบทพูด (Guide) ครบถ้วนตามที่คุณร่างมา
   const scenarioGuides = {
     'Scenario 1': "การติดต่อ: อัดเสียงลูกค้าปฏิเสธ เช่น 'โทรมาจากไหนครับ ถ้าเป็นประกันยังไม่สนใจนะครับ'",
     'Scenario 2': "การแนะนำตัว: อัดเสียงลูกค้าตอบตกลงฟังข้อเสนอ หลังจากพนักงานแนะนำตัวตามสคริปต์",
@@ -34,7 +33,7 @@ export default function PerfectTrainerAudioCreator() {
 
   const [questionTitle, setQuestionTitle] = useState('')
   const [userId, setUserId] = useState(null)
-  const [myQuestions, setMyQuestions] = useState([])
+  const [myQuestions, setMyQuestions] = useState([]) // เก็บรายการโจทย์
   const [generatedPIN, setGeneratedPIN] = useState(null)
   const [showQR, setShowQR] = useState(false)
   const [basePath, setBasePath] = useState('')
@@ -48,6 +47,21 @@ export default function PerfectTrainerAudioCreator() {
   const audioChunks = useRef([])
   const streamRef = useRef(null)
 
+  // ✅ ฟังก์ชันดึงข้อมูลโจทย์ (แยกออกมาเพื่อให้เรียกซ้ำได้แม่นยำ)
+  const fetchMyQuestions = useCallback(async (uid, dept, level) => {
+    const { data, error } = await supabase
+      .from('questions')
+      .select('*')
+      .eq('user_id', uid)
+      .eq('target_department', dept)
+      .eq('target_level', level)
+      .order('created_at', { ascending: true });
+    
+    if (!error) {
+      setMyQuestions(data || []);
+    }
+  }, []);
+
   useEffect(() => {
     const initData = async () => {
       if (typeof window !== 'undefined') setBasePath(window.location.origin)
@@ -59,25 +73,24 @@ export default function PerfectTrainerAudioCreator() {
       }
     }
     initData()
-  }, [targetDept, targetLevel])
+  }, [targetDept, targetLevel, fetchMyQuestions])
 
   // --- Helper Functions ---
-  const countInCat = (catId) => myQuestions.filter(q => q.category === catId).length
+  // ✅ ฟังก์ชันนับโจทย์ในแต่ละ Scenario (ปรับปรุงให้นับได้แม่นยำขึ้น)
+  const countInCat = (catName) => {
+    return myQuestions.filter(q => q.category === catName).length;
+  }
 
   async function fetchTargets(uid, dept, level) {
     const { data } = await supabase.from('target_settings')
       .select('targets').eq('user_id', uid).eq('department', dept).eq('level', level).single()
-    if (data?.targets) setTargets(data.targets)
+    if (data?.targets) {
+      // ผสมค่าจาก DB เข้ากับค่าเริ่มต้นเพื่อให้ Scenario ไม่หาย
+      setTargets(prev => ({ ...prev, ...data.targets }));
+    }
   }
 
-  async function fetchMyQuestions(uid, dept, level) {
-    const { data } = await supabase.from('questions')
-      .select('*').eq('user_id', uid).eq('target_department', dept).eq('target_level', level)
-      .order('created_at', { ascending: true })
-    setMyQuestions(data || [])
-  }
-
-  // --- ระบบบันทึกเสียง (แก้ไขการ Reset ปุ่ม) ---
+  // --- ระบบบันทึกเสียง ---
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -96,7 +109,7 @@ export default function PerfectTrainerAudioCreator() {
       mediaRecorder.current.start()
       setIsRecording(true)
       setPreviewUrl(null)
-    } catch (err) { alert("Error mic: " + err.message) }
+    } catch (err) { alert("Microphone Error: " + err.message) }
   }
 
   function stopRecording() {
@@ -106,17 +119,28 @@ export default function PerfectTrainerAudioCreator() {
   }
 
   async function saveQuestion() {
-    if (!audioBlob || !questionTitle) return alert("กรุณาระบุชื่อข้อและอัดเสียงก่อน")
+    if (!audioBlob || !questionTitle) return alert("กรุณาระบุชื่อโจทย์และอัดเสียงก่อน")
     setUploading(true)
     const fileName = `questions/${Date.now()}.wav`
-    await supabase.storage.from('recordings').upload(fileName, audioBlob)
-    await supabase.from('questions').insert([{
+    
+    const { error: uploadError } = await supabase.storage.from('recordings').upload(fileName, audioBlob)
+    if (uploadError) return alert("Upload Error: " + uploadError.message);
+
+    const { error: dbError } = await supabase.from('questions').insert([{
       question_text: questionTitle, category, target_department: targetDept,
       target_level: targetLevel, audio_question_url: fileName, type: 'audio_roleplay', user_id: userId
     }])
-    setUploading(false); setQuestionTitle(''); setPreviewUrl(null);
-    fetchMyQuestions(userId, targetDept, targetLevel)
-    alert("บันทึกสำเร็จ!")
+
+    if (!dbError) {
+      alert("บันทึกโจทย์สำเร็จ!");
+      setQuestionTitle(''); 
+      setPreviewUrl(null);
+      // ✅ บังคับให้โหลดข้อมูลใหม่ทันทีหลังบันทึก เพื่อให้ตัวเลขสรุปเปลี่ยน
+      await fetchMyQuestions(userId, targetDept, targetLevel);
+    } else {
+      alert("DB Error: " + dbError.message);
+    }
+    setUploading(false);
   }
 
   async function generateGamePIN() {
@@ -133,7 +157,7 @@ export default function PerfectTrainerAudioCreator() {
     <div style={s.page}>
       <div style={s.card}>
         <div style={s.header}>
-            <h1 style={s.title}>🎙️ Insurance Simulator Trainer v2</h1>
+            <h1 style={s.title}>🎙️ Insurance Simulator Trainer v2.1</h1>
             <div style={{display:'flex', gap:'10px'}}>
                 <button onClick={() => setShowQR(true)} style={s.btnQR}>📱 QR พนักงาน</button>
                 <button onClick={generateGamePIN} style={s.btnPIN}>🔑 สร้าง PIN</button>
@@ -168,11 +192,11 @@ export default function PerfectTrainerAudioCreator() {
         </div>
 
         <div style={s.guideBox}>
-            <small style={{color:'#666'}}>💡 บทบาทของเทรนเนอร์ใน {category}:</small>
+            <small style={{color:'#666'}}>💡 คำแนะนำเทรนเนอร์สำหรับ {category}:</small>
             <p style={{margin:'5px 0 0 0', fontWeight:'bold', color:'#6c5ce7', lineHeight:'1.5'}}>{scenarioGuides[category]}</p>
         </div>
 
-        <input type="text" value={questionTitle} onChange={e=>setQuestionTitle(e.target.value)} placeholder="ชื่อโจทย์ (เช่น: ลูกค้าไม่มีเวลา, ลูกค้าขอปรึกษาแฟน...)" style={s.input} />
+        <input type="text" value={questionTitle} onChange={e=>setQuestionTitle(e.target.value)} placeholder="ชื่อโจทย์ (เช่น: ลูกค้าอ้างว่าไม่สนใจ, ถามหาโปรโมชั่น...)" style={s.input} />
 
         <div style={s.recordBox}>
           {!isRecording ? (
@@ -182,10 +206,10 @@ export default function PerfectTrainerAudioCreator() {
           )}
           
           {previewUrl && !isRecording && (
-            <div style={{marginTop: '20px', padding:'20px', background:'#eee', borderRadius:'20px'}}>
+            <div style={{marginTop: '20px', padding:'20px', background:'#f8f9fa', borderRadius:'20px', border:'1px solid #eee'}}>
               <audio src={previewUrl} controls style={{marginBottom: '10px'}} />
               <button onClick={saveQuestion} disabled={uploading} style={s.btnSave}>
-                {uploading ? 'กำลังประมวลผล...' : `บันทึกลงคลัง ${category} ✅`}
+                {uploading ? 'กำลังบันทึกข้อมูล...' : `บันทึกลงคลัง ${category} ✅`}
               </button>
             </div>
           )}
@@ -193,19 +217,24 @@ export default function PerfectTrainerAudioCreator() {
 
         {generatedPIN && (
           <div style={s.pinAlert}>
-            เลข PIN สำหรับพนักงาน: <span style={{fontSize:'2.5rem', color:'#e21b3c'}}>{generatedPIN}</span>
+            PIN สำหรับพนักงาน: <span style={{fontSize:'2.5rem', color:'#e21b3c'}}>{generatedPIN}</span>
           </div>
         )}
 
+        {/* ✅ ส่วนสรุปคลังโจทย์ แก้ไขให้ Reactive ตลอดเวลา */}
         <div style={s.statusSection}>
-          <h3 style={{color:'#000', fontWeight:'900'}}>📊 สรุปคลังโจทย์ Scenario 1 - 10</h3>
+          <h3 style={{color:'#000', fontWeight:'900'}}>📊 สรุปจำนวนโจทย์ Scenario 1 - 10</h3>
           <div style={s.flexGrid}>
-             {allScenarios.map(c => (
-               <div key={c} style={s.statBox(countInCat(c), targets[c])}>
-                 <div style={{fontSize: '0.75rem', marginBottom:'5px'}}>{c}</div>
-                 <div style={{fontSize: '1.1rem'}}>{countInCat(c)} / {targets[c]}</div>
-               </div>
-             ))}
+             {allScenarios.map(c => {
+               const count = countInCat(c);
+               const target = targets[c] || 0;
+               return (
+                 <div key={c} style={s.statBox(count, target)}>
+                   <div style={{fontSize: '0.75rem', opacity: 0.8}}>{c}</div>
+                   <div style={{fontSize: '1.2rem', marginTop: '5px'}}>{count} / {target}</div>
+                 </div>
+               );
+             })}
           </div>
         </div>
       </div>
@@ -225,12 +254,13 @@ export default function PerfectTrainerAudioCreator() {
   )
 }
 
+// --- Styles (คงเดิมเพื่อความสวยงาม) ---
 const s = {
   page: { background: '#f4f7f6', minHeight: '100vh', padding: '40px 20px', fontFamily: 'sans-serif' },
   card: { maxWidth: '1000px', margin: '0 auto', background: 'white', padding: '40px', borderRadius: '40px', boxShadow: '0 15px 35px rgba(0,0,0,0.08)' },
   header: { display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'30px', borderBottom:'2px solid #eee', paddingBottom:'20px' },
   title: { color: '#1a1a1a', margin: 0, fontWeight: '900', fontSize:'1.5rem' },
-  btnQR: { background: '#333', color: 'white', border: 'none', padding: '12px 22px', borderRadius: '15px', fontWeight: '900', cursor: 'pointer', transition:'0.3s' },
+  btnQR: { background: '#333', color: 'white', border: 'none', padding: '12px 22px', borderRadius: '15px', fontWeight: '900', cursor: 'pointer' },
   btnPIN: { background: '#6c5ce7', color: 'white', border: 'none', padding: '12px 22px', borderRadius: '15px', fontWeight: '900', cursor: 'pointer' },
   grid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr 0.6fr', gap: '15px', marginBottom: '25px' },
   guideBox: { padding: '20px', background: '#f0eeff', borderRadius: '20px', borderLeft: '6px solid #6c5ce7', marginBottom: '25px' },
@@ -238,18 +268,17 @@ const s = {
   select: { width: '100%', padding: '14px', borderRadius: '15px', border: '2px solid #eee', fontWeight: '700', fontSize:'1rem', outline:'none' },
   input: { width: '100%', padding: '18px', borderRadius: '18px', border: '2px solid #eee', marginBottom: '25px', boxSizing: 'border-box', fontSize:'1.1rem', fontWeight:'700', background:'#fdfdfd' },
   recordBox: { textAlign: 'center', border: '3px dashed #ddd', padding: '50px', borderRadius: '30px', background: '#fafafa' },
-  btnRec: { padding: '18px 45px', borderRadius: '50px', background: '#e21b3c', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '900', fontSize:'1.1rem', boxShadow:'0 5px 15px rgba(226,27,60,0.3)' },
+  btnRec: { padding: '18px 45px', borderRadius: '50px', background: '#e21b3c', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '900', fontSize:'1.1rem' },
   btnStop: { padding: '18px 45px', borderRadius: '50px', background: '#000', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '900', fontSize:'1.1rem' },
   btnSave: { width: '100%', padding: '18px', background: '#20bf6b', color: 'white', border: 'none', borderRadius: '18px', fontWeight: '900', fontSize:'1.1rem', cursor:'pointer' },
   pinAlert: { marginTop: '30px', padding: '25px', background: '#fff9db', borderRadius: '20px', border: '2px solid #fab005', textAlign: 'center', fontWeight: '900', color: '#000' },
   statusSection: { marginTop: '40px', borderTop: '2px solid #eee', paddingTop: '30px' },
-  flexGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '12px' },
+  flexGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px' },
   statBox: (count, target) => ({
-    padding: '18px 12px', borderRadius: '22px', textAlign: 'center', fontWeight: '900',
-    background: count >= target ? '#ebfbee' : '#f8f9fa',
-    color: count >= target ? '#2f9e44' : '#495057',
-    border: count >= target ? '2px solid #2f9e44' : '2px solid #e9ecef',
-    transition: '0.3s'
+    padding: '20px 10px', borderRadius: '25px', textAlign: 'center', fontWeight: '900',
+    background: count >= target && target > 0 ? '#ebfbee' : '#f8f9fa',
+    color: count >= target && target > 0 ? '#2f9e44' : '#495057',
+    border: count >= target && target > 0 ? '2px solid #2f9e44' : '2px solid #e9ecef',
   }),
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
   modal: { background: 'white', padding: '45px', borderRadius: '40px', textAlign: 'center', maxWidth: '450px', width: '90%' },
