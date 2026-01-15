@@ -2,7 +2,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { QRCodeCanvas } from 'qrcode.react'
-import { Mic, Square, Play, CheckCircle, Database, LayoutGrid, Radio, Smartphone, Save } from 'lucide-react'
+import { 
+  Mic, Square, Play, CheckCircle, Database, LayoutGrid, 
+  Radio, Smartphone, Save, Trash2, Volume2, Music, Loader2 
+} from 'lucide-react'
 
 export default function ProfessionalTrainerStudio() {
   // --- CONFIGURATION ---
@@ -13,7 +16,7 @@ export default function ProfessionalTrainerStudio() {
     { id: 'SC-04', name: 'Scenario 4', label: 'สุขภาพเบื้องต้น', guide: 'อัดเสียงลูกค้า: "ตรวจทุกปี/แข็งแรงดี"' },
     { id: 'SC-05', name: 'Scenario 5', label: 'การนำเสนอผลิตภัณฑ์', guide: 'อัดเสียงสถานการณ์โต้ตอบขณะฟังความคุ้มครอง' },
     { id: 'SC-06', name: 'Scenario 6', label: 'ลูกค้าสอบถาม', guide: 'อัดเสียงคำถามจำลองที่ลูกค้าชอบถามบ่อยๆ' },
-    { id: 'SC-07', name: 'Scenario 7', label: 'คำถามสุขภาพ 5 ข้อ', guide: 'อัดเสียงลูกค้าตอบ "เคย/ไม่เคย" (เน้นรายละเอียดโรค)' },
+    { id: 'SC-07', name: 'Scenario 7', label: 'คำถามสุขภาพ 5 ข้อ', guide: 'อัดเสียงลูกค้าตอบ "เคย/ไม่เคย"' },
     { id: 'SC-08', name: 'Scenario 8', label: 'แจ้งเบี้ยและภาษี', guide: 'อัดเสียงลูกค้าตอบรับเรื่องเรทค่าเบี้ย' },
     { id: 'SC-10', name: 'Scenario 10', label: 'การลงทะเบียน', guide: 'อัดเสียงลูกค้าบอก ชื่อ/เลขบัตร/ผู้รับประโยชน์' }
   ];
@@ -25,7 +28,7 @@ export default function ProfessionalTrainerStudio() {
   const [userId, setUserId] = useState(null)
   
   const [recording, setRecording] = useState({ isRecording: false, blob: null, url: null, title: '' })
-  const [ui, setUi] = useState({ uploading: false, showQR: false, pin: null, basePath: '' })
+  const [ui, setUi] = useState({ uploading: false, showQR: false, pin: null, basePath: '', deletingId: null })
 
   const mediaRef = useRef(null)
   const streamRef = useRef(null)
@@ -33,13 +36,11 @@ export default function ProfessionalTrainerStudio() {
 
   // --- CORE LOGIC ---
   const syncData = useCallback(async (uid) => {
-    // ดึงโจทย์ทั้งหมด
     const { data: qData } = await supabase.from('questions')
       .select('*').eq('user_id', uid)
       .eq('target_department', session.dept).eq('target_level', session.level)
     if (qData) setQuestions(qData)
 
-    // ดึงเป้าหมาย
     const { data: tData } = await supabase.from('target_settings')
       .select('targets').eq('user_id', uid)
       .eq('department', session.dept).eq('level', session.level).single()
@@ -82,7 +83,7 @@ export default function ProfessionalTrainerStudio() {
     if (!recording.blob || !recording.title) return alert("กรุณาอัดเสียงและระบุชื่อโจทย์")
     setUi(prev => ({ ...prev, uploading: true }))
     
-    const path = `voice_${Date.now()}.wav`
+    const path = `questions/v_${Date.now()}.wav`
     await supabase.storage.from('recordings').upload(path, recording.blob)
     
     const newRecord = {
@@ -95,69 +96,81 @@ export default function ProfessionalTrainerStudio() {
       user_id: userId
     }
 
-    const { error } = await supabase.from('questions').insert([newRecord])
-    if (!error) {
-      setQuestions(prev => [...prev, newRecord])
+    const { data, error } = await supabase.from('questions').insert([newRecord]).select()
+    if (!error && data) {
+      setQuestions(prev => [...prev, data[0]])
       setRecording({ isRecording: false, blob: null, url: null, title: '' })
-      alert("บันทึกโจทย์ลงคลังสำเร็จ!")
     }
     setUi(prev => ({ ...prev, uploading: false }))
   }
 
+  // ✅ ฟังก์ชันลบโจทย์ (Delete Logic)
+  async function deleteQuestion(q) {
+    if (!confirm(`ยืนยันการลบโจทย์: "${q.question_text}" ใช่หรือไม่?`)) return;
+    
+    setUi(prev => ({ ...prev, deletingId: q.id }))
+    
+    // 1. ลบไฟล์ใน Storage
+    await supabase.storage.from('recordings').remove([q.audio_question_url])
+    
+    // 2. ลบแถวข้อมูลใน Database
+    const { error } = await supabase.from('questions').delete().eq('id', q.id)
+    
+    if (!error) {
+      setQuestions(prev => prev.filter(item => item.id !== q.id))
+    }
+    setUi(prev => ({ ...prev, deletingId: null }))
+  }
+
   // --- RENDER HELPERS ---
   const getProgress = (name) => questions.filter(q => q.category === name).length
+  const currentScenQuestions = questions.filter(q => q.category === session.activeScen.name)
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-900">
       <div className="max-w-6xl mx-auto">
         
-        {/* HEADER SECTION */}
+        {/* HEADER */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
           <div>
             <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
               <Radio className="text-red-500 animate-pulse" /> Simulator Studio
             </h1>
-            <p className="text-slate-500 font-medium">Trainer Control Panel v3.0</p>
+            <p className="text-slate-500 font-medium">Trainer Control Panel v3.5 (Management Mode)</p>
           </div>
           <div className="flex gap-2 w-full md:w-auto">
             <button onClick={() => setUi(p => ({ ...p, showQR: true }))} className="flex-1 md:flex-none bg-slate-800 text-white px-5 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-700 transition">
-              <Smartphone size={20} /> QR Code
+              <Smartphone size={18} /> QR Code
             </button>
             <button onClick={async () => {
               const pin = Math.floor(100000 + Math.random() * 900000).toString()
               await supabase.from('game_sessions').insert([{ pin, user_id: userId, category: 'AudioArena', target_department: session.dept, target_level: session.level, is_active: true }])
               setUi(p => ({ ...p, pin }))
             }} className="flex-1 md:flex-none bg-indigo-600 text-white px-5 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-500 transition shadow-lg shadow-indigo-200">
-              <Database size={20} /> Generate PIN
+              <Database size={18} /> Generate PIN
             </button>
           </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
-          {/* LEFT: SELECTION & STATS */}
+          {/* LEFT: PROGRESS & SELECTION */}
           <aside className="lg:col-span-4 space-y-6">
             <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-              <h3 className="font-black mb-4 flex items-center gap-2"><LayoutGrid size={18} /> Configuration</h3>
+              <h3 className="font-black mb-4 flex items-center gap-2 text-slate-400 uppercase text-xs tracking-widest"><LayoutGrid size={16} /> Configuration</h3>
               <div className="space-y-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Department</label>
-                  <select value={session.dept} onChange={e => setSession(p => ({ ...p, dept: e.target.value }))} className="w-full mt-1 p-3 bg-slate-50 border-none rounded-xl font-bold focus:ring-2 ring-indigo-500">
-                    {['UOB','AYCAP','ttb','Krungsri','Agent','Broker'].map(d => <option key={d}>{d}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Experience Level</label>
-                  <select value={session.level} onChange={e => setSession(p => ({ ...p, level: e.target.value }))} className="w-full mt-1 p-3 bg-slate-50 border-none rounded-xl font-bold focus:ring-2 ring-indigo-500">
-                    {['Nursery','Rising Star','Legend'].map(l => <option key={l}>{l}</option>)}
-                  </select>
-                </div>
+                <select value={session.dept} onChange={e => setSession(p => ({ ...p, dept: e.target.value }))} className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 ring-indigo-500 appearance-none">
+                  {['UOB','AYCAP','ttb','Krungsri','Agent','Broker'].map(d => <option key={d}>{d}</option>)}
+                </select>
+                <select value={session.level} onChange={e => setSession(p => ({ ...p, level: e.target.value }))} className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 ring-indigo-500 appearance-none">
+                  {['Nursery','Rising Star','Legend'].map(l => <option key={l}>{l}</option>)}
+                </select>
               </div>
             </section>
 
             <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-              <h3 className="font-black mb-4">Library Progress</h3>
-              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+              <h3 className="font-black mb-4 text-xs text-slate-400 uppercase tracking-widest">Library Overview</h3>
+              <div className="space-y-2 max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
                 {SCENARIOS.map(sc => (
                   <div key={sc.id} onClick={() => setSession(p => ({ ...p, activeScen: sc }))} 
                     className={`p-4 rounded-2xl cursor-pointer transition-all border-2 ${session.activeScen.name === sc.name ? 'border-indigo-500 bg-indigo-50' : 'border-transparent bg-slate-50 hover:bg-slate-100'}`}>
@@ -167,7 +180,7 @@ export default function ProfessionalTrainerStudio() {
                         {getProgress(sc.name)} / {targets[sc.name] || 5}
                       </span>
                     </div>
-                    <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                    <div className="w-full bg-slate-200 h-1 rounded-full overflow-hidden">
                       <div className="bg-indigo-500 h-full transition-all" style={{ width: `${Math.min((getProgress(sc.name) / (targets[sc.name] || 5)) * 100, 100)}%` }} />
                     </div>
                   </div>
@@ -176,84 +189,116 @@ export default function ProfessionalTrainerStudio() {
             </section>
           </aside>
 
-          {/* RIGHT: MAIN RECORDING AREA */}
+          {/* RIGHT: WORKSPACE */}
           <main className="lg:col-span-8 space-y-6">
             
-            <div className="bg-white p-8 rounded-[40px] shadow-sm border border-slate-100 relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-8 opacity-5">
-                <Mic size={120} />
+            {/* RECORDER PANEL */}
+            <div className="bg-white p-8 rounded-[40px] shadow-sm border border-slate-100">
+              <span className="bg-indigo-100 text-indigo-700 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest">Workspace</span>
+              <h2 className="text-3xl font-black mt-2 text-slate-800">{session.activeScen.label}</h2>
+              <p className="text-slate-500 mt-2 font-medium italic opacity-70">"{session.activeScen.guide}"</p>
+
+              <div className="mt-8">
+                <input type="text" value={recording.title} onChange={e => setRecording(p => ({ ...p, title: e.target.value }))} 
+                  className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-3xl font-bold text-lg focus:border-indigo-500 outline-none transition-all shadow-inner"
+                  placeholder="พิมพ์หัวข้อโจทย์ที่คุณกำลังจะอัด..." />
               </div>
 
-              <div className="relative z-10">
-                <span className="bg-indigo-100 text-indigo-700 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest">Active Lesson</span>
-                <h2 className="text-3xl font-black mt-2 text-slate-800">{session.activeScen.label}</h2>
-                <p className="text-slate-500 mt-2 font-medium bg-slate-50 p-4 rounded-2xl border-l-4 border-indigo-500 italic">
-                  &ldquo;{session.activeScen.guide}&rdquo;
+              <div className="mt-8 flex flex-col items-center justify-center p-10 bg-slate-50 rounded-[40px] border-2 border-dashed border-slate-200">
+                {!recording.isRecording ? (
+                  <button onClick={startRec} className="w-20 h-20 bg-red-500 text-white rounded-full flex items-center justify-center shadow-xl shadow-red-200 hover:scale-110 transition active:scale-95 group">
+                    <Mic size={32} />
+                  </button>
+                ) : (
+                  <button onClick={stopRec} className="w-20 h-20 bg-slate-900 text-white rounded-full flex items-center justify-center shadow-xl shadow-slate-300 animate-pulse">
+                    <Square size={28} />
+                  </button>
+                )}
+                <p className="mt-4 font-black text-slate-400 uppercase text-[10px] tracking-widest">
+                  {recording.isRecording ? 'Listening...' : 'Ready to record'}
                 </p>
+              </div>
 
-                <div className="mt-8">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">โจทย์เสียงนี้เกี่ยวกับอะไร? (เช่น ลูกค้าไม่ว่าง/มีประกันแล้ว)</label>
-                  <input type="text" value={recording.title} onChange={e => setRecording(p => ({ ...p, title: e.target.value }))} 
-                    className="w-full mt-2 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-lg focus:border-indigo-500 outline-none transition-all"
-                    placeholder="ตั้งชื่อหัวข้อโจทย์ลูกค้า..." />
-                </div>
-
-                <div className="mt-8 flex flex-col items-center justify-center p-12 bg-slate-50 rounded-[35px] border-2 border-dashed border-slate-200">
-                  {!recording.isRecording ? (
-                    <button onClick={startRec} className="w-24 h-24 bg-red-500 text-white rounded-full flex items-center justify-center shadow-xl shadow-red-200 hover:scale-110 transition active:scale-95 group">
-                      <Mic size={40} className="group-hover:animate-bounce" />
-                    </button>
-                  ) : (
-                    <button onClick={stopRec} className="w-24 h-24 bg-slate-900 text-white rounded-full flex items-center justify-center shadow-xl shadow-slate-300 animate-pulse">
-                      <Square size={35} />
-                    </button>
-                  )}
-                  <p className="mt-4 font-black text-slate-400 uppercase tracking-tighter">
-                    {recording.isRecording ? 'กำลังฟังเสียงเทรนเนอร์...' : 'กดปุ่มสีแดงเพื่อเริ่มอัด'}
-                  </p>
-                </div>
-
-                {recording.url && !recording.isRecording && (
-                  <div className="mt-8 p-6 bg-indigo-600 rounded-3xl text-white flex flex-col md:flex-row items-center gap-6 animate-in fade-in slide-in-from-bottom-4">
-                    <div className="flex-1 w-full">
-                      <p className="font-bold mb-2 flex items-center gap-2"><Play size={16} /> Preview Recording</p>
-                      <audio src={recording.url} controls className="w-full h-10 rounded-lg overflow-hidden brightness-90" />
-                    </div>
-                    <button onClick={handleUpload} disabled={ui.uploading} 
-                      className="w-full md:w-auto bg-white text-indigo-600 px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-indigo-50 transition active:scale-95 disabled:opacity-50">
-                      {ui.uploading ? 'UPLOADING...' : <><Save size={20} /> SAVE TO LIBRARY</>}
-                    </button>
+              {recording.url && !recording.isRecording && (
+                <div className="mt-8 p-6 bg-indigo-600 rounded-3xl text-white flex flex-col md:flex-row items-center gap-6 animate-in slide-in-from-bottom-2">
+                  <div className="flex-1 w-full">
+                    <audio src={recording.url} controls className="w-full h-10 rounded-lg brightness-90" />
                   </div>
+                  <button onClick={handleUpload} disabled={ui.uploading} 
+                    className="w-full md:w-auto bg-white text-indigo-600 px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:shadow-lg transition disabled:opacity-50">
+                    {ui.uploading ? <Loader2 className="animate-spin" /> : <><Save size={20} /> SAVE NOW</>}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ✅ MANAGEMENT PANEL: รายการโจทย์ที่อัดไปแล้วใน Scenario นี้ */}
+            <div className="bg-white p-8 rounded-[40px] shadow-sm border border-slate-100">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="font-black text-lg flex items-center gap-2">
+                  <Music className="text-indigo-500" size={20} /> 
+                  คลังโจทย์ของ {session.activeScen.name}
+                </h3>
+                <span className="text-xs font-bold text-slate-400 bg-slate-100 px-3 py-1 rounded-full">
+                  {currentScenQuestions.length} โจทย์ในระบบ
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {currentScenQuestions.length === 0 ? (
+                  <div className="text-center py-10 text-slate-300 border-2 border-dashed border-slate-50 rounded-3xl">
+                    <Volume2 size={40} className="mx-auto mb-2 opacity-20" />
+                    <p className="font-bold italic">ยังไม่มีโจทย์ในบทนี้...</p>
+                  </div>
+                ) : (
+                  currentScenQuestions.map((q) => (
+                    <div key={q.id} className="group flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 rounded-2xl transition-all border border-transparent hover:border-slate-200">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-500 shadow-sm group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+                          <Play size={18} />
+                        </div>
+                        <div>
+                          <p className="font-bold text-sm text-slate-700">{q.question_text}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">ID: {q.id.split('-')[0]}...</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => deleteQuestion(q)}
+                        disabled={ui.deletingId === q.id}
+                        className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                      >
+                        {ui.deletingId === q.id ? <Loader2 className="animate-spin" size={18} /> : <Trash2 size={18} />}
+                      </button>
+                    </div>
+                  ))
                 )}
               </div>
             </div>
 
             {ui.pin && (
-              <div className="bg-yellow-400 p-8 rounded-[35px] flex items-center justify-between shadow-lg shadow-yellow-100 border-4 border-white animate-bounce">
+              <div className="bg-yellow-400 p-8 rounded-[40px] flex items-center justify-between border-4 border-white shadow-xl shadow-yellow-100 animate-in zoom-in-95">
                 <div>
-                  <p className="font-black text-yellow-900 uppercase text-sm tracking-widest">Active Training PIN</p>
-                  <h4 className="text-5xl font-black text-slate-900">{ui.pin}</h4>
+                  <p className="font-black text-yellow-900 uppercase text-[10px] tracking-widest">Session Key</p>
+                  <h4 className="text-5xl font-black text-slate-900 leading-none">{ui.pin}</h4>
                 </div>
-                <div className="text-right hidden md:block">
-                  <p className="font-bold text-yellow-900 leading-tight">นำเลขนี้ให้พนักงาน<br/>กรอกเพื่อเริ่มฝึก</p>
-                </div>
+                < स्मार्टफोन className="text-yellow-900/20" size={60} />
               </div>
             )}
           </main>
         </div>
       </div>
 
-      {/* QR MODAL */}
+      {/* MODAL QR */}
       {ui.showQR && (
-        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md flex items-center justify-center z-50 p-6" onClick={() => setUi(p => ({ ...p, showQR: false }))}>
-          <div className="bg-white p-10 rounded-[50px] text-center max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur flex items-center justify-center z-50 p-6" onClick={() => setUi(p => ({ ...p, showQR: false }))}>
+          <div className="bg-white p-10 rounded-[50px] text-center max-w-sm w-full shadow-2xl animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
             <CheckCircle className="mx-auto text-green-500 mb-4" size={50} />
-            <h2 className="text-2xl font-black mb-2 text-slate-800">Ready to Train</h2>
-            <p className="text-slate-500 mb-8 font-medium">สแกนเพื่อให้พนักงานเข้าสู่ระบบ</p>
-            <div className="bg-slate-50 p-6 rounded-3xl inline-block border-2 border-slate-100 shadow-inner mb-8">
+            <h2 className="text-2xl font-black mb-1">Ready to Stream</h2>
+            <p className="text-slate-400 mb-8 font-medium text-sm">สแกนเพื่อให้พนักงานเริ่มทำภารกิจ</p>
+            <div className="bg-white p-6 rounded-3xl inline-block border-2 border-slate-50 shadow-inner mb-8">
               <QRCodeCanvas value={`${ui.basePath}/play/audio`} size={200} level="H" />
             </div>
-            <button onClick={() => setUi(p => ({ ...p, showQR: false }))} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black hover:bg-slate-800 transition">CLOSE WINDOW</button>
+            <button onClick={() => setUi(p => ({ ...p, showQR: false }))} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black tracking-widest hover:bg-slate-800 transition">GOT IT</button>
           </div>
         </div>
       )}
@@ -261,8 +306,7 @@ export default function ProfessionalTrainerStudio() {
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
       `}</style>
     </div>
   )
