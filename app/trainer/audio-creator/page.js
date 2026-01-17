@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { QRCodeCanvas } from 'qrcode.react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Mic, Square, Play, CheckCircle, Database, LayoutGrid, 
   Radio, Smartphone, Save, Trash2, Volume2, Music, 
