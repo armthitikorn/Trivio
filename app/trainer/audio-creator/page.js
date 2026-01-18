@@ -2,8 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { QRCodeCanvas } from 'qrcode.react'
-// เพิ่ม Icon สำหรับความสวยงาม (ถ้าคุณมี Lucide-React หรือใช้ Text แทนก็ได้)
-import { Trash2, Play } from 'lucide-react' 
+// หากไม่ได้ลง Lucide-react สามารถใช้ Emoji แทนได้ตามโค้ดด้านล่างครับ
 
 export default function PerfectTrainerAudioCreator() {
   const allScenarios = [
@@ -38,15 +37,23 @@ export default function PerfectTrainerAudioCreator() {
   const [showQR, setShowQR] = useState(false)
   const [basePath, setBasePath] = useState('')
 
+  // --- Recording States ---
   const [isRecording, setIsRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState(null)
   const [previewUrl, setPreviewUrl] = useState(null)
   const [uploading, setUploading] = useState(false)
-  const [deletingId, setDeletingId] = useState(null) // ✅ State สำหรับค้างตอนกำลังลบ
-
+  const [deletingId, setDeletingId] = useState(null)
   const mediaRecorder = useRef(null)
   const audioChunks = useRef([])
   const streamRef = useRef(null)
+
+  // ✅ ฟังก์ชันล้างหน่วยความจำเสียง (Hard Reset) ป้องกัน Error และไฟล์ค้าง
+  const clearAudioSession = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setAudioBlob(null);
+    setPreviewUrl(null);
+    audioChunks.current = [];
+  }
 
   const fetchMyQuestions = useCallback(async (uid, dept, level) => {
     const { data } = await supabase
@@ -77,8 +84,10 @@ export default function PerfectTrainerAudioCreator() {
     if (data?.targets) setTargets(prev => ({ ...prev, ...data.targets }));
   }
 
+  // --- Recorder Logic ---
   async function startRecording() {
     try {
+      clearAudioSession(); // ล้างค่าก่อนเริ่มอัดใหม่เสมอ
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream 
       mediaRecorder.current = new MediaRecorder(stream)
@@ -91,13 +100,39 @@ export default function PerfectTrainerAudioCreator() {
         setIsRecording(false) 
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
       }
-      mediaRecorder.current.start(); setIsRecording(true); setPreviewUrl(null)
-    } catch (err) { alert("Mic Error") }
+      mediaRecorder.current.start(); setIsRecording(true);
+    } catch (err) { alert("ไม่สามารถเข้าถึงไมค์ได้") }
   }
 
   function stopRecording() {
     if (mediaRecorder.current?.state !== 'inactive') mediaRecorder.current.stop()
     else setIsRecording(false)
+  }
+
+  // ✅ ฟังเสียงก่อนลบ หรือฟังเสียงโจทย์ในคลัง
+  function playAudio(path) {
+    const { data } = supabase.storage.from('recordings').getPublicUrl(path);
+    const audio = new Audio(data.publicUrl);
+    audio.play().catch(() => alert("เกิดข้อผิดพลาดในการเล่นเสียง"));
+  }
+
+  // ✅ ฟังก์ชันลบข้อมูล (Delete File & Record)
+  async function deleteQuestion(id, audioPath) {
+    if (!confirm("คุณต้องการลบโจทย์นี้ออกจากคลังใช่หรือไม่?")) return;
+    setDeletingId(id);
+    try {
+      // 1. ลบไฟล์จริงใน Storage
+      await supabase.storage.from('recordings').remove([audioPath]);
+      // 2. ลบแถวใน Database
+      await supabase.from('questions').delete().eq('id', id);
+      // 3. อัปเดตหน้าจอทันที
+      setMyQuestions(prev => prev.filter(q => q.id !== id));
+      alert("ลบข้อมูลสำเร็จ");
+    } catch (error) {
+      alert("ลบไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   async function saveQuestion() {
@@ -118,44 +153,17 @@ export default function PerfectTrainerAudioCreator() {
       user_id: userId
     };
 
-    const { data: insertedData, error: dbErr } = await supabase.from('questions').insert([newQuestion]).select()
+    const { data, error: dbErr } = await supabase.from('questions').insert([newQuestion]).select()
 
-    if (!dbErr && insertedData) {
-      // ✅ ใช้ข้อมูลจริงจาก DB มาอัปเดต (เพื่อเอา ID มาใช้ลบต่อได้ทันที)
-      setMyQuestions(prev => [...prev, insertedData[0]]);
+    if (!dbErr && data) {
+      setMyQuestions(prev => [...prev, data[0]]);
       alert("บันทึกโจทย์สำเร็จ!");
       setQuestionTitle(''); 
-      setPreviewUrl(null);
-      setAudioBlob(null);
+      clearAudioSession();
     } else {
       alert("DB Error");
     }
     setUploading(false);
-  }
-
-  // ✅ ฟังก์ชันล้างข้อมูล (ลบโจทย์)
-  async function deleteQuestion(id, audioPath) {
-    if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการลบโจทย์นี้?")) return;
-    
-    setDeletingId(id);
-    try {
-      // 1. ลบไฟล์ใน Storage
-      const { error: storageErr } = await supabase.storage.from('recordings').remove([audioPath]);
-      if (storageErr) throw storageErr;
-
-      // 2. ลบแถวใน Database
-      const { error: dbErr } = await supabase.from('questions').delete().eq('id', id);
-      if (dbErr) throw dbErr;
-
-      // 3. อัปเดต UI ทันที
-      setMyQuestions(prev => prev.filter(q => q.id !== id));
-      alert("ลบข้อมูลสำเร็จ");
-    } catch (error) {
-      console.error(error);
-      alert("เกิดข้อผิดพลาดในการลบ");
-    } finally {
-      setDeletingId(null);
-    }
   }
 
   async function generateGamePIN() {
@@ -172,14 +180,13 @@ export default function PerfectTrainerAudioCreator() {
     <div style={s.page}>
       <div style={s.card}>
         <div style={s.header}>
-            <h1 style={s.title}>🎙️ Simulator Studio Master</h1>
+            <h1 style={s.title}>🎙️ Simulator Mission Studio v2.5</h1>
             <div style={{display:'flex', gap:'10px'}}>
-                <button onClick={() => setShowQR(true)} style={s.btnQR}>📱 QR</button>
+                <button onClick={() => setShowQR(true)} style={s.btnQR}>📱 QR พนักงาน</button>
                 <button onClick={generateGamePIN} style={s.btnPIN}>🔑 สร้าง PIN</button>
             </div>
         </div>
 
-        {/* --- ส่วนตั้งค่าแฝง --- */}
         <div style={s.grid}>
           <div><label style={s.label}>🏢 แผนก:</label>
             <select value={targetDept} onChange={e=>setTargetDept(e.target.value)} style={s.select}>
@@ -229,9 +236,12 @@ export default function PerfectTrainerAudioCreator() {
           )}
         </div>
 
-        {/* --- สรุปตัวเลข (Dashboard) --- */}
+        {generatedPIN && (
+          <div style={s.pinAlert}>PIN: <span style={{fontSize:'2.5rem', color:'#e21b3c'}}>{generatedPIN}</span></div>
+        )}
+
         <div style={s.statusSection}>
-          <h3 style={{color:'#000', fontWeight:'900', marginBottom:'20px'}}>📊 สรุปโจทย์ราย Scenario</h3>
+          <h3 style={{color:'#000', fontWeight:'900', marginBottom:'20px'}}>📊 สรุปจำนวนโจทย์โต้ตอบลูกค้า</h3>
           <div style={s.flexGrid}>
              {allScenarios.map(scenName => {
                const count = myQuestions.filter(q => q.category === scenName).length;
@@ -246,15 +256,17 @@ export default function PerfectTrainerAudioCreator() {
           </div>
         </div>
 
-        {/* ✅ ส่วนที่เพิ่มมาใหม่: รายการโจทย์ใน Scenario ปัจจุบันเพื่อให้ลบได้ */}
-        <div style={s.questionList}>
-           <h3 style={{color:'#000', fontWeight:'900', marginBottom:'15px'}}>📁 โจทย์ใน {category}</h3>
-           {myQuestions.filter(q => q.category === category).length === 0 ? (
-             <p style={{color:'#999', textAlign:'center'}}>ยังไม่มีโจทย์ในหมวดนี้</p>
-           ) : (
-             myQuestions.filter(q => q.category === category).map((q, i) => (
-               <div key={q.id || i} style={s.qItem}>
-                  <div style={{fontWeight:'bold'}}>{q.question_text}</div>
+        {/* ✅ คลังโจทย์ด้านล่าง (ฟังก่อนลบ) */}
+        <div style={s.librarySection}>
+          <h3 style={{color:'#000', fontWeight:'900', marginBottom:'15px'}}>📁 โจทย์ใน Scenario ปัจจุบัน</h3>
+          {myQuestions.filter(q => q.category === category).length === 0 ? (
+            <p style={{textAlign:'center', color:'#999', padding:'20px'}}>ยังไม่มีโจทย์ในหมวดนี้</p>
+          ) : (
+            myQuestions.filter(q => q.category === category).map((q) => (
+              <div key={q.id} style={s.qItem}>
+                <div style={{fontWeight:'bold'}}>{q.question_text}</div>
+                <div style={{display:'flex', gap:'10px'}}>
+                  <button onClick={() => playAudio(q.audio_question_url)} style={s.btnPlay}>▶️ ฟัง</button>
                   <button 
                     onClick={() => deleteQuestion(q.id, q.audio_question_url)} 
                     disabled={deletingId === q.id}
@@ -262,14 +274,13 @@ export default function PerfectTrainerAudioCreator() {
                   >
                     {deletingId === q.id ? '...' : '🗑️ ลบ'}
                   </button>
-               </div>
-             ))
-           )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
-
       </div>
 
-      {/* QR Modal */}
       {showQR && (
         <div style={s.overlay} onClick={() => setShowQR(false)}>
           <div style={s.modal} onClick={e => e.stopPropagation()}>
@@ -286,22 +297,22 @@ export default function PerfectTrainerAudioCreator() {
 }
 
 const s = {
-  // ... (style เดิมของคุณ)
   page: { background: '#f4f7f6', minHeight: '100vh', padding: '40px 20px', fontFamily: 'sans-serif' },
   card: { maxWidth: '1000px', margin: '0 auto', background: 'white', padding: '40px', borderRadius: '40px', boxShadow: '0 15px 35px rgba(0,0,0,0.08)' },
   header: { display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'30px', borderBottom:'2px solid #eee', paddingBottom:'20px' },
   title: { color: '#1a1a1a', margin: 0, fontWeight: '900', fontSize:'1.5rem' },
-  btnQR: { background: '#333', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '12px', fontWeight: '900', cursor: 'pointer' },
-  btnPIN: { background: '#6c5ce7', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '12px', fontWeight: '900', cursor: 'pointer' },
+  btnQR: { background: '#333', color: 'white', border: 'none', padding: '12px 22px', borderRadius: '15px', fontWeight: '900', cursor: 'pointer' },
+  btnPIN: { background: '#6c5ce7', color: 'white', border: 'none', padding: '12px 22px', borderRadius: '15px', fontWeight: '900', cursor: 'pointer' },
   grid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr 0.6fr', gap: '15px', marginBottom: '25px' },
   guideBox: { padding: '20px', background: '#f0eeff', borderRadius: '20px', borderLeft: '6px solid #6c5ce7', marginBottom: '25px' },
   label: { fontWeight: '900', color: '#444', fontSize: '0.85rem', marginBottom:'5px', display:'block' },
   select: { width: '100%', padding: '14px', borderRadius: '15px', border: '2px solid #eee', fontWeight: '700', fontSize:'1rem' },
   input: { width: '100%', padding: '18px', borderRadius: '18px', border: '2px solid #eee', marginBottom: '25px', fontSize:'1.1rem', fontWeight:'700', background:'#fdfdfd' },
-  recordBox: { textAlign: 'center', border: '3px dashed #ddd', padding: '40px', borderRadius: '30px', background: '#fafafa' },
+  recordBox: { textAlign: 'center', border: '3px dashed #ddd', padding: '50px', borderRadius: '30px', background: '#fafafa' },
   btnRec: { padding: '18px 45px', borderRadius: '50px', background: '#e21b3c', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '900' },
   btnStop: { padding: '18px 45px', borderRadius: '50px', background: '#000', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '900' },
   btnSave: { width: '100%', padding: '18px', background: '#20bf6b', color: 'white', border: 'none', borderRadius: '18px', fontWeight: '900', fontSize:'1.1rem' },
+  pinAlert: { marginTop: '30px', padding: '25px', background: '#fff9db', borderRadius: '20px', border: '2px solid #fab005', textAlign: 'center', fontWeight: '900' },
   statusSection: { marginTop: '40px', borderTop: '2px solid #eee', paddingTop: '30px' },
   flexGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px' },
   statBox: (count, target) => ({
@@ -310,13 +321,12 @@ const s = {
     color: count >= target && target > 0 ? '#2f9e44' : '#495057',
     border: count >= target && target > 0 ? '2px solid #2f9e44' : '2px solid #e9ecef',
   }),
+  librarySection: { marginTop: '40px', background: '#fff', padding: '25px', borderRadius: '30px', border: '1px solid #eee' },
+  qItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px', borderBottom: '1px solid #f0f0f0' },
+  btnPlay: { background: '#eef2ff', color: '#6c5ce7', border: 'none', padding: '8px 15px', borderRadius: '12px', fontWeight: '900', cursor: 'pointer' },
+  btnDelete: { background: '#fff0f0', color: '#e21b3c', border: 'none', padding: '8px 15px', borderRadius: '12px', fontWeight: '900', cursor: 'pointer' },
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
   modal: { background: 'white', padding: '45px', borderRadius: '40px', textAlign: 'center', maxWidth: '450px', width: '90%' },
   qrBox: { background: '#fff', padding: '20px', borderRadius: '20px', display: 'inline-block', border: '1px solid #eee', marginBottom: '25px' },
-  btnClose: { width: '100%', padding: '16px', borderRadius: '18px', border: 'none', background: '#000', color: 'white', fontWeight: '900' },
-
-  // ✅ สไตล์ที่เพิ่มใหม่สำหรับรายการโจทย์
-  questionList: { marginTop: '30px', background: '#fff', padding: '20px', borderRadius: '25px', border: '1px solid #eee' },
-  qItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 15px', borderBottom: '1px solid #f0f0f0', marginBottom: '5px' },
-  btnDelete: { background: '#fff0f0', color: '#e21b3c', border: 'none', padding: '8px 15px', borderRadius: '10px', fontWeight: '900', cursor: 'pointer' }
+  btnClose: { width: '100%', padding: '16px', borderRadius: '18px', border: 'none', background: '#000', color: 'white', fontWeight: '900' }
 }
