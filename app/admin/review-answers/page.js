@@ -14,39 +14,47 @@ export default function FinalReviewCenter() {
   const [search, setSearch] = useState('')
   const [grading, setGrading] = useState({ score: '', feedback: '' })
 
+// ✅ 1. ปรับให้ดึงข้อมูลอัตโนมัติเมื่อมีการเปลี่ยน Tab หรือ วันที่
   useEffect(() => {
     fetchData()
-  }, [tab])
+  }, [tab, startDate, endDate]) // เพิ่ม startDate, endDate เป็นตัวเฝ้าดู
 
-  // --- ฟังก์ชันดึงข้อมูล (คงความละเอียดตามต้นฉบับ) ---
   async function fetchData() {
-    setLoading(true)
+    setLoading(false) // เริ่มต้นด้วยสถานะไม่โหลดก่อนเผื่อกรณี Error
     const table = tab === 'video' ? 'video_answers' : 'answers'
     
+    // ตั้งค่า Relation ให้ตรงตาม Schema ของแต่ละตาราง
     const relation = tab === 'video' 
-      ? 'video_questions!video_answers_question_id_fkey(title)'
-      : 'questions!answers_question_id_fkey(question_text)' 
+      ? 'video_questions(title)' 
+      : 'questions(question_text)' 
     
-    let query = supabase
-      .from(table)
-      .select(`*, ${relation}`)
-      .order('created_at', { ascending: false })
+    setLoading(true)
+    try {
+      let query = supabase
+        .from(table)
+        .select(`*, ${relation}`)
+        .order('created_at', { ascending: false })
 
-    if (startDate) query = query.gte('created_at', `${startDate}T00:00:00`)
-    if (endDate) query = query.lte('created_at', `${endDate}T23:59:59`)
+      // ✅ 2. ปรับการกรองวันที่ให้แม่นยำ (รองรับ ISO Format)
+      if (startDate) {
+        query = query.gte('created_at', `${startDate}T00:00:00.000Z`)
+      }
+      if (endDate) {
+        query = query.lte('created_at', `${endDate}T23:59:59.999Z`)
+      }
 
-    const { data: res, error } = await query
-    
-    if (error) {
-      console.error("Fetch Error Details:", error)
-      setData([])
-    } else {
+      const { data: res, error } = await query
+      
+      if (error) throw error
       setData(res || [])
+    } catch (error) {
+      console.error("Fetch Error:", error.message)
+      setData([])
+    } finally {
+      setLoading(false)
+      setSelected(null)
     }
-    setLoading(false)
-    setSelected(null)
   }
-
   // --- ฟังก์ชันบันทึกคะแนน ---
   async function saveGrade() {
     if (!selected || !grading.score) return alert('กรุณาระบุคะแนน')
@@ -132,13 +140,22 @@ export default function FinalReviewCenter() {
       </header>
 
       <div style={styles.filterBar} className="filter-bar">
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }} className="filter-group">
-          <input type="date" style={styles.dateInput} onChange={(e) => setStartDate(e.target.value)} />
-          <span style={{color:'#ccc'}}>ถึง</span>
-          <input type="date" style={styles.dateInput} onChange={(e) => setEndDate(e.target.value)} />
-          <button onClick={fetchData} style={styles.refreshBtn}>🔄 ดึงข้อมูลใหม่</button>
-        </div>
-        <input 
+<div style={{ display: 'flex', gap: '10px', alignItems: 'center' }} className="filter-group">
+  <input 
+    type="date" 
+    value={startDate}
+    style={styles.dateInput} 
+    onChange={(e) => setStartDate(e.target.value)} 
+  />
+  <span style={{color:'#ccc'}}>ถึง</span>
+  <input 
+    type="date" 
+    value={endDate}
+    style={styles.dateInput} 
+    onChange={(e) => setEndDate(e.target.value)} 
+  />
+  <button onClick={fetchData} style={styles.refreshBtn}>🔄 Refresh</button>
+</div>        <input 
           placeholder="🔍 ค้นชื่อพนักงาน..." 
           style={styles.search} 
           className="search-input"
