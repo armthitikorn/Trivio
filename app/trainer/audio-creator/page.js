@@ -1,208 +1,283 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { QRCodeCanvas } from 'qrcode.react'
+// เพิ่ม Icon สำหรับความสวยงาม (ถ้าคุณมี Lucide-React หรือใช้ Text แทนก็ได้)
+import { Trash2, Play } from 'lucide-react' 
 
 export default function PerfectTrainerAudioCreator() {
-  // --- States เดิม ---
+  const allScenarios = [
+    'Scenario 1', 'Scenario 2', 'Scenario 3', 'Scenario 4', 
+    'Scenario 5', 'Scenario 6', 'Scenario 7', 'Scenario 8', 'Scenario 10'
+  ];
+
   const [targetDept, setTargetDept] = useState('UOB')
-  const [category, setCategory] = useState('Introduction')
+  const [category, setCategory] = useState('Scenario 1')
   const [targetLevel, setTargetLevel] = useState('Nursery')
   
-  // ✅ เก็บเป้าหมายแยกหมวดหมู่
-  const [targets, setTargets] = useState({
-    Introduction: 5,
-    Objection: 5,
-    Closing: 5
-  })
+  const [targets, setTargets] = useState(() => {
+    return allScenarios.reduce((acc, curr) => ({ ...acc, [curr]: 5 }), {});
+  });
+
+  const scenarioGuides = {
+    'Scenario 1': "การติดต่อ: อัดเสียงลูกค้าปฏิเสธ เช่น 'โทรมาจากไหนครับ ถ้าเป็นประกันยังไม่สนใจนะครับ'",
+    'Scenario 2': "การแนะนำตัว: อัดเสียงลูกค้าตอบตกลงฟังข้อเสนอ หลังจากพนักงานแนะนำตัวตามสคริปต์",
+    'Scenario 3': "การเช็คบัตร: อัดเสียงลูกค้าตอบ 'ใช่ครับ ใช้อยู่ครับ' เมื่อถามเรื่องการใช้จ่ายผ่านบัตร",
+    'Scenario 4': "สุขภาพเบื้องต้น: อัดเสียงลูกค้าตอบเรื่องการตรวจสุขภาพประจำปี หรือ 'อ๋อไม่ครับ' เรื่องทานยา",
+    'Scenario 5': "นำเสนอผลิตภัณฑ์: อัดเสียงจำลองสถานการณ์ขณะพนักงานอธิบายความคุ้มครอง",
+    'Scenario 6': "ลูกค้าสอบถาม: อัดเสียงเทรนเนอร์ (ลูกค้า) ถามคำถามข้อสงสัยต่างๆ",
+    'Scenario 7': "สุขภาพ 5 ข้อ: อัดเสียงลูกค้าตอบ 'ไม่เคย' หรือ 'เคย'",
+    'Scenario 8': "ค่าเบี้ยและภาษี: อัดเสียงลูกค้าตอบยืนยันอายุ หรือตอบเรื่องการลดหย่อนภาษีแสนแรก",
+    'Scenario 10': "ลงทะเบียน: อัดเสียงลูกค้าแจ้งชื่อ-นามสกุล / ที่อยู่ / เลขบัตร / ผู้รับประโยชน์ / และตอบตกลง"
+  }
 
   const [questionTitle, setQuestionTitle] = useState('')
   const [userId, setUserId] = useState(null)
-  const [myQuestions, setMyQuestions] = useState([])
+  const [myQuestions, setMyQuestions] = useState([]) 
   const [generatedPIN, setGeneratedPIN] = useState(null)
   const [showQR, setShowQR] = useState(false)
+  const [basePath, setBasePath] = useState('')
 
-  // --- States อัดเสียง ---
   const [isRecording, setIsRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState(null)
   const [previewUrl, setPreviewUrl] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [deletingId, setDeletingId] = useState(null) // ✅ State สำหรับค้างตอนกำลังลบ
+
   const mediaRecorder = useRef(null)
   const audioChunks = useRef([])
+  const streamRef = useRef(null)
 
-  // ✅ 1. แก้ไข useEffect: ให้โหลดทั้งคำถามและเป้าหมายจาก Supabase
-  useEffect(() => {
-    const initData = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        setUserId(user.id)
-        fetchMyQuestions(user.id, targetDept, targetLevel)
-        fetchTargets(user.id, targetDept, targetLevel) // ดึงเป้าหมายที่เคยบันทึกไว้
-      }
-    }
-    initData()
-  }, [targetDept, targetLevel])
-
-  // ✅ 2. ฟังก์ชันดึงค่าเป้าหมายจาก Supabase
-  async function fetchTargets(uid, dept, level) {
-    const { data, error } = await supabase
-      .from('target_settings')
-      .select('targets')
-      .eq('user_id', uid)
-      .eq('department', dept)
-      .eq('level', level)
-      .single()
-
-    if (data && data.targets) {
-      setTargets(data.targets)
-    } else {
-      // ถ้าไม่เคยบันทึก ให้ใช้ค่าเริ่มต้น
-      setTargets({ Introduction: 5, Objection: 5, Closing: 5 })
-    }
-  }
-
-  // ✅ 3. ฟังก์ชันบันทึกเป้าหมายลง Supabase (Upsert)
-  async function saveTargetsToSupabase(newTargets) {
-    if (!userId) return;
-    const { error } = await supabase
-      .from('target_settings')
-      .upsert({
-        user_id: userId,
-        department: targetDept,
-        level: targetLevel,
-        targets: newTargets
-      }, { onConflict: 'user_id,department,level' }) // ป้องกันการสร้างแถวซ้ำ
-
-    if (error) console.error("Error saving targets:", error.message)
-  }
-
-  async function fetchMyQuestions(uid, dept, level) {
+  const fetchMyQuestions = useCallback(async (uid, dept, level) => {
     const { data } = await supabase
       .from('questions')
       .select('*')
       .eq('user_id', uid)
       .eq('target_department', dept)
-      .eq('target_level', level)
-      .order('created_at', { ascending: true })
-    setMyQuestions(data || [])
-  }
+      .eq('target_level', level);
+    if (data) setMyQuestions(data);
+  }, []);
 
-  // --- ฟังก์ชันสร้าง PIN (ตรรกะเดิม) ---
-  async function generateGamePIN() {
-    if (myQuestions.length === 0) return alert("กรุณาสร้างโจทย์อย่างน้อย 1 ข้อก่อนสร้าง PIN ครับ")
-    const newPIN = Math.floor(100000 + Math.random() * 900000).toString()
-    const { error } = await supabase.from('game_sessions').insert([{
-      pin: newPIN,
-      user_id: userId,
-      category: 'AudioArena',
-      target_department: targetDept,
-      target_level: targetLevel,
-      is_active: true
-    }])
-    if (error) alert("Error: " + error.message)
-    else {
-        setGeneratedPIN(newPIN)
-        alert(`✅ สร้าง PIN สำเร็จ: ${newPIN}`)
+  useEffect(() => {
+    const initData = async () => {
+      if (typeof window !== 'undefined') setBasePath(window.location.origin)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setUserId(user.id)
+        fetchMyQuestions(user.id, targetDept, targetLevel)
+        fetchTargets(user.id, targetDept, targetLevel)
+      }
     }
+    initData()
+  }, [targetDept, targetLevel, fetchMyQuestions])
+
+  async function fetchTargets(uid, dept, level) {
+    const { data } = await supabase.from('target_settings')
+      .select('targets').eq('user_id', uid).eq('department', dept).eq('level', level).single()
+    if (data?.targets) setTargets(prev => ({ ...prev, ...data.targets }));
   }
 
-  // --- ระบบอัดเสียง (ตรรกะเดิม) ---
   async function startRecording() {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    mediaRecorder.current = new MediaRecorder(stream)
-    audioChunks.current = []
-    mediaRecorder.current.ondataavailable = (e) => audioChunks.current.push(e.data)
-    mediaRecorder.current.onstop = () => {
-      const blob = new Blob(audioChunks.current, { type: 'audio/wav' })
-      setAudioBlob(blob); setPreviewUrl(URL.createObjectURL(blob))
-    }
-    mediaRecorder.current.start(); setIsRecording(true)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream 
+      mediaRecorder.current = new MediaRecorder(stream)
+      audioChunks.current = []
+      mediaRecorder.current.ondataavailable = (e) => audioChunks.current.push(e.data)
+      mediaRecorder.current.onstop = () => {
+        const blob = new Blob(audioChunks.current, { type: 'audio/wav' })
+        setAudioBlob(blob)
+        setPreviewUrl(URL.createObjectURL(blob))
+        setIsRecording(false) 
+        if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
+      }
+      mediaRecorder.current.start(); setIsRecording(true); setPreviewUrl(null)
+    } catch (err) { alert("Mic Error") }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder.current?.state !== 'inactive') mediaRecorder.current.stop()
+    else setIsRecording(false)
   }
 
   async function saveQuestion() {
-    if (!audioBlob || !questionTitle) return alert("กรุณาระบุชื่อข้อและอัดเสียงก่อน")
+    if (!audioBlob || !questionTitle) return alert("กรุณาระบุชื่อและอัดเสียง")
     setUploading(true)
     const fileName = `questions/${Date.now()}.wav`
-    await supabase.storage.from('recordings').upload(fileName, audioBlob)
-    await supabase.from('questions').insert([{
-      question_text: questionTitle, category, target_department: targetDept,
-      target_level: targetLevel, audio_question_url: fileName, type: 'audio_roleplay', user_id: userId
-    }])
-    alert("บันทึกสำเร็จ!"); setUploading(false); fetchMyQuestions(userId, targetDept, targetLevel)
+    
+    const { error: upErr } = await supabase.storage.from('recordings').upload(fileName, audioBlob)
+    if (upErr) return alert("Upload Error")
+
+    const newQuestion = {
+      question_text: questionTitle, 
+      category: category, 
+      target_department: targetDept,
+      target_level: targetLevel, 
+      audio_question_url: fileName, 
+      type: 'audio_roleplay', 
+      user_id: userId
+    };
+
+    const { data: insertedData, error: dbErr } = await supabase.from('questions').insert([newQuestion]).select()
+
+    if (!dbErr && insertedData) {
+      // ✅ ใช้ข้อมูลจริงจาก DB มาอัปเดต (เพื่อเอา ID มาใช้ลบต่อได้ทันที)
+      setMyQuestions(prev => [...prev, insertedData[0]]);
+      alert("บันทึกโจทย์สำเร็จ!");
+      setQuestionTitle(''); 
+      setPreviewUrl(null);
+      setAudioBlob(null);
+    } else {
+      alert("DB Error");
+    }
+    setUploading(false);
   }
 
-  const countInCat = (catId) => myQuestions.filter(q => q.category === catId).length
+  // ✅ ฟังก์ชันล้างข้อมูล (ลบโจทย์)
+  async function deleteQuestion(id, audioPath) {
+    if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการลบโจทย์นี้?")) return;
+    
+    setDeletingId(id);
+    try {
+      // 1. ลบไฟล์ใน Storage
+      const { error: storageErr } = await supabase.storage.from('recordings').remove([audioPath]);
+      if (storageErr) throw storageErr;
 
-  // ✅ ปรับปรุง: เมื่อเปลี่ยนเป้าหมาย ให้บันทึกลงฐานข้อมูลทันที
-  const handleTargetChange = (val) => {
-    const newCount = parseInt(val) || 0
-    const updatedTargets = { ...targets, [category]: newCount }
-    setTargets(updatedTargets)
-    saveTargetsToSupabase(updatedTargets) // บันทึกอัตโนมัติ
+      // 2. ลบแถวใน Database
+      const { error: dbErr } = await supabase.from('questions').delete().eq('id', id);
+      if (dbErr) throw dbErr;
+
+      // 3. อัปเดต UI ทันที
+      setMyQuestions(prev => prev.filter(q => q.id !== id));
+      alert("ลบข้อมูลสำเร็จ");
+    } catch (error) {
+      console.error(error);
+      alert("เกิดข้อผิดพลาดในการลบ");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function generateGamePIN() {
+    if (myQuestions.length === 0) return alert("สร้างโจทย์ก่อน")
+    const newPIN = Math.floor(100000 + Math.random() * 900000).toString()
+    const { error } = await supabase.from('game_sessions').insert([{
+      pin: newPIN, user_id: userId, category: 'AudioArena',
+      target_department: targetDept, target_level: targetLevel, is_active: true
+    }])
+    if (!error) setGeneratedPIN(newPIN)
   }
 
   return (
     <div style={s.page}>
       <div style={s.card}>
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'25px'}}>
-            <h1 style={s.title}>🎙️ Audio Mission Studio</h1>
+        <div style={s.header}>
+            <h1 style={s.title}>🎙️ Simulator Studio Master</h1>
             <div style={{display:'flex', gap:'10px'}}>
-                <button onClick={() => setShowQR(true)} style={s.btnQR}>📱 แสดง QR Code</button>
-                <button onClick={generateGamePIN} style={s.btnPIN}>🔑 สร้าง PIN (กดตรงนี้)</button>
+                <button onClick={() => setShowQR(true)} style={s.btnQR}>📱 QR</button>
+                <button onClick={generateGamePIN} style={s.btnPIN}>🔑 สร้าง PIN</button>
             </div>
         </div>
 
+        {/* --- ส่วนตั้งค่าแฝง --- */}
         <div style={s.grid}>
-          <div><label style={s.label}>🏢 แผนก:</label><select value={targetDept} onChange={e=>setTargetDept(e.target.value)} style={s.select}>{['UOB','AYCAP','ttb','Krungsri','Agent','Broker'].map(d=><option key={d}>{d}</option>)}</select></div>
-          <div><label style={s.label}>⭐ ระดับ:</label><select value={targetLevel} onChange={e=>setTargetLevel(e.target.value)} style={s.select}>{['Nursery','Rising Star','Legend'].map(l=><option key={l}>{l}</option>)}</select></div>
-          <div><label style={s.label}>📚 Section:</label><select value={category} onChange={e=>setCategory(e.target.value)} style={s.select}><option value="Introduction">1. Intro</option><option value="Objection">2. Objection</option><option value="Closing">3. Closing</option></select></div>
-          
-          {/* ✅ Input เป้าหมายที่ดึงค่าจาก DB และบันทึกกลับอัตโนมัติ */}
-          <div>
-            <label style={s.label}>🎯 เป้าหมาย:</label>
-            <input 
-              type="number" 
-              value={targets[category]} 
-              onChange={e=>handleTargetChange(e.target.value)} 
-              style={s.select} 
-            />
+          <div><label style={s.label}>🏢 แผนก:</label>
+            <select value={targetDept} onChange={e=>setTargetDept(e.target.value)} style={s.select}>
+              {['UOB','AYCAP','ttb','Krungsri','Agent','Broker'].map(d=><option key={d}>{d}</option>)}
+            </select>
+          </div>
+          <div><label style={s.label}>⭐ ระดับ:</label>
+            <select value={targetLevel} onChange={e=>setTargetLevel(e.target.value)} style={s.select}>
+              {['Nursery','Rising Star','Legend'].map(l=><option key={l}>{l}</option>)}
+            </select>
+          </div>
+          <div><label style={s.label}>📚 Scenario:</label>
+            <select value={category} onChange={e=>setCategory(e.target.value)} style={s.select}>
+              {allScenarios.map(scen => <option key={scen} value={scen}>{scen}</option>)}
+            </select>
+          </div>
+          <div><label style={s.label}>🎯 เป้าหมาย:</label>
+            <input type="number" value={targets[category] || 0} onChange={e=>{
+               const newTargets = {...targets, [category]: parseInt(e.target.value) || 0};
+               setTargets(newTargets);
+               if(userId) supabase.from('target_settings').upsert({user_id:userId, department:targetDept, level:targetLevel, targets:newTargets}, {onConflict:'user_id,department,level'}).then();
+            }} style={s.select} />
           </div>
         </div>
 
-        <input type="text" value={questionTitle} onChange={e=>setQuestionTitle(e.target.value)} placeholder="ระบุสคริปต์โจทย์ลูกค้า..." style={s.input} />
+        <div style={s.guideBox}>
+            <small style={{color:'#666'}}>💡 บทบาทเทรนเนอร์:</small>
+            <p style={{margin:'5px 0 0 0', fontWeight:'bold', color:'#6c5ce7'}}>{scenarioGuides[category]}</p>
+        </div>
+
+        <input type="text" value={questionTitle} onChange={e=>setQuestionTitle(e.target.value)} placeholder="ชื่อโจทย์โต้ตอบลูกค้า..." style={s.input} />
 
         <div style={s.recordBox}>
-          {!isRecording ? <button onClick={startRecording} style={s.btnRec}>🔴 อัดเสียงโจทย์</button> : <button onClick={()=>mediaRecorder.current.stop()} style={s.btnStop}>⬛ หยุดอัด</button>}
-          {previewUrl && <button onClick={saveQuestion} disabled={uploading} style={s.btnSave}>{uploading ? '...' : 'บันทึกลงคลัง ✅'}</button>}
+          {!isRecording ? (
+            <button onClick={startRecording} style={s.btnRec}>🔴 อัดเสียงลูกค้า</button>
+          ) : (
+            <button onClick={stopRecording} style={s.btnStop}>⬛ หยุด (Stop)</button> 
+          )}
+          
+          {previewUrl && !isRecording && (
+            <div style={{marginTop: '20px', padding:'20px', background:'#f8f9fa', borderRadius:'20px', border:'1px solid #ddd'}}>
+              <audio src={previewUrl} controls style={{marginBottom: '10px'}} />
+              <button onClick={saveQuestion} disabled={uploading} style={s.btnSave}>
+                {uploading ? 'กำลังบันทึก...' : `บันทึกลง Scenario ✅`}
+              </button>
+            </div>
+          )}
         </div>
 
-        {generatedPIN && (
-            <div style={s.pinAlert}>
-                เลข PIN ปัจจุบันสำหรับพนักงาน: <span style={{fontSize:'2rem'}}>{generatedPIN}</span>
-            </div>
-        )}
-
+        {/* --- สรุปตัวเลข (Dashboard) --- */}
         <div style={s.statusSection}>
-          <h3 style={{color:'#000', fontWeight:'900'}}>📊 คลังโจทย์แผนก {targetDept}</h3>
-          <div style={s.flexGap}>
-             {['Introduction','Objection','Closing'].map(c => (
-               <div key={c} style={s.statBox(countInCat(c), targets[c])}>
-                 {c}: {countInCat(c)}/{targets[c]}
-               </div>
-             ))}
+          <h3 style={{color:'#000', fontWeight:'900', marginBottom:'20px'}}>📊 สรุปโจทย์ราย Scenario</h3>
+          <div style={s.flexGrid}>
+             {allScenarios.map(scenName => {
+               const count = myQuestions.filter(q => q.category === scenName).length;
+               const target = targets[scenName] || 0;
+               return (
+                 <div key={scenName} style={s.statBox(count, target)}>
+                   <div style={{fontSize: '0.75rem', opacity: 0.8}}>{scenName}</div>
+                   <div style={{fontSize: '1.2rem', marginTop: '5px'}}>{count} / {target}</div>
+                 </div>
+               );
+             })}
           </div>
         </div>
+
+        {/* ✅ ส่วนที่เพิ่มมาใหม่: รายการโจทย์ใน Scenario ปัจจุบันเพื่อให้ลบได้ */}
+        <div style={s.questionList}>
+           <h3 style={{color:'#000', fontWeight:'900', marginBottom:'15px'}}>📁 โจทย์ใน {category}</h3>
+           {myQuestions.filter(q => q.category === category).length === 0 ? (
+             <p style={{color:'#999', textAlign:'center'}}>ยังไม่มีโจทย์ในหมวดนี้</p>
+           ) : (
+             myQuestions.filter(q => q.category === category).map((q, i) => (
+               <div key={q.id || i} style={s.qItem}>
+                  <div style={{fontWeight:'bold'}}>{q.question_text}</div>
+                  <button 
+                    onClick={() => deleteQuestion(q.id, q.audio_question_url)} 
+                    disabled={deletingId === q.id}
+                    style={s.btnDelete}
+                  >
+                    {deletingId === q.id ? '...' : '🗑️ ลบ'}
+                  </button>
+               </div>
+             ))
+           )}
+        </div>
+
       </div>
 
-      {/* --- QR Code Modal --- */}
+      {/* QR Modal */}
       {showQR && (
         <div style={s.overlay} onClick={() => setShowQR(false)}>
           <div style={s.modal} onClick={e => e.stopPropagation()}>
-            <h2 style={{color: '#000', fontWeight: '900'}}>สแกนเพื่อลงทะเบียน</h2>
+            <h2 style={{color: '#000', fontWeight: '900'}}>พนักงานสแกนเพื่อเริ่มฝึก</h2>
             <div style={s.qrBox}>
-              <QRCodeCanvas value={`${window.location.origin}/play/audio`} size={250} level={"H"} />
+              {basePath && <QRCodeCanvas value={`${basePath}/play/audio`} size={250} level={"H"} />}
             </div>
-            <button onClick={() => setShowQR(false)} style={s.btnClose}>ปิดหน้าต่าง</button>
+            <button onClick={() => setShowQR(false)} style={s.btnClose}>ปิด</button>
           </div>
         </div>
       )}
@@ -210,32 +285,38 @@ export default function PerfectTrainerAudioCreator() {
   )
 }
 
-// --- Styles (คงเดิมทุกประการ) ---
 const s = {
-  page: { background: '#f0f2f5', minHeight: '100vh', padding: '40px 20px', fontFamily: 'sans-serif' },
-  card: { maxWidth: '950px', margin: '0 auto', background: 'white', padding: '40px', borderRadius: '40px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' },
-  title: { color: '#000', margin: 0, fontWeight: '900' },
-  btnQR: { background: '#333', color: 'white', border: 'none', padding: '12px 20px', borderRadius: '15px', fontWeight: '900', cursor: 'pointer' },
-  btnPIN: { background: '#6c5ce7', color: 'white', border: 'none', padding: '12px 20px', borderRadius: '15px', fontWeight: '900', cursor: 'pointer' },
-  grid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 0.6fr', gap: '15px', marginBottom: '25px' },
-  label: { fontWeight: '900', color: '#000', fontSize: '0.9rem' },
-  select: { width: '100%', padding: '12px', borderRadius: '12px', border: '2px solid #ddd', marginTop: '5px', fontWeight: '700' },
-  input: { width: '100%', padding: '18px', borderRadius: '15px', border: '2px solid #ddd', marginBottom: '20px', boxSizing: 'border-box', fontSize:'1.1rem', fontWeight:'700' },
-  recordBox: { textAlign: 'center', border: '3px dashed #eee', padding: '40px', borderRadius: '25px', background: '#fafafa' },
-  btnRec: { padding: '15px 40px', borderRadius: '40px', background: '#e21b3c', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '900' },
-  btnStop: { padding: '15px 40px', borderRadius: '40px', background: '#000', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '900' },
-  btnSave: { width: '100%', marginTop: '15px', padding: '15px', background: '#28a745', color: 'white', border: 'none', borderRadius: '15px', fontWeight: '900' },
-  pinAlert: { marginTop: '20px', padding: '20px', background: '#fff9db', borderRadius: '15px', border: '2px solid #fab005', textAlign: 'center', fontWeight: '900', color: '#000' },
-  statusSection: { marginTop: '40px', borderTop: '2px solid #eee', paddingTop: '20px' },
-  flexGap: { display: 'flex', gap: '15px' },
+  // ... (style เดิมของคุณ)
+  page: { background: '#f4f7f6', minHeight: '100vh', padding: '40px 20px', fontFamily: 'sans-serif' },
+  card: { maxWidth: '1000px', margin: '0 auto', background: 'white', padding: '40px', borderRadius: '40px', boxShadow: '0 15px 35px rgba(0,0,0,0.08)' },
+  header: { display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'30px', borderBottom:'2px solid #eee', paddingBottom:'20px' },
+  title: { color: '#1a1a1a', margin: 0, fontWeight: '900', fontSize:'1.5rem' },
+  btnQR: { background: '#333', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '12px', fontWeight: '900', cursor: 'pointer' },
+  btnPIN: { background: '#6c5ce7', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '12px', fontWeight: '900', cursor: 'pointer' },
+  grid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr 0.6fr', gap: '15px', marginBottom: '25px' },
+  guideBox: { padding: '20px', background: '#f0eeff', borderRadius: '20px', borderLeft: '6px solid #6c5ce7', marginBottom: '25px' },
+  label: { fontWeight: '900', color: '#444', fontSize: '0.85rem', marginBottom:'5px', display:'block' },
+  select: { width: '100%', padding: '14px', borderRadius: '15px', border: '2px solid #eee', fontWeight: '700', fontSize:'1rem' },
+  input: { width: '100%', padding: '18px', borderRadius: '18px', border: '2px solid #eee', marginBottom: '25px', fontSize:'1.1rem', fontWeight:'700', background:'#fdfdfd' },
+  recordBox: { textAlign: 'center', border: '3px dashed #ddd', padding: '40px', borderRadius: '30px', background: '#fafafa' },
+  btnRec: { padding: '18px 45px', borderRadius: '50px', background: '#e21b3c', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '900' },
+  btnStop: { padding: '18px 45px', borderRadius: '50px', background: '#000', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '900' },
+  btnSave: { width: '100%', padding: '18px', background: '#20bf6b', color: 'white', border: 'none', borderRadius: '18px', fontWeight: '900', fontSize:'1.1rem' },
+  statusSection: { marginTop: '40px', borderTop: '2px solid #eee', paddingTop: '30px' },
+  flexGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px' },
   statBox: (count, target) => ({
-    flex: 1, padding: '20px', borderRadius: '18px', textAlign: 'center', fontWeight: '900',
-    background: count >= target ? '#d4edda' : '#f8f9fa',
-    color: count >= target ? '#155724' : '#000',
-    border: count >= target ? '2px solid #28a745' : '2px solid #ddd'
+    padding: '20px 10px', borderRadius: '25px', textAlign: 'center', fontWeight: '900',
+    background: count >= target && target > 0 ? '#ebfbee' : '#f8f9fa',
+    color: count >= target && target > 0 ? '#2f9e44' : '#495057',
+    border: count >= target && target > 0 ? '2px solid #2f9e44' : '2px solid #e9ecef',
   }),
-  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.9)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
-  modal: { background: 'white', padding: '40px', borderRadius: '40px', textAlign: 'center', maxWidth: '450px', width: '90%' },
-  qrBox: { background: '#fff', padding: '20px', borderRadius: '20px', display: 'inline-block', border: '2px solid #eee', marginBottom: '20px' },
-  btnClose: { width: '100%', padding: '15px', borderRadius: '15px', border: 'none', background: '#000', color: 'white', fontWeight: '900', cursor: 'pointer' }
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
+  modal: { background: 'white', padding: '45px', borderRadius: '40px', textAlign: 'center', maxWidth: '450px', width: '90%' },
+  qrBox: { background: '#fff', padding: '20px', borderRadius: '20px', display: 'inline-block', border: '1px solid #eee', marginBottom: '25px' },
+  btnClose: { width: '100%', padding: '16px', borderRadius: '18px', border: 'none', background: '#000', color: 'white', fontWeight: '900' },
+
+  // ✅ สไตล์ที่เพิ่มใหม่สำหรับรายการโจทย์
+  questionList: { marginTop: '30px', background: '#fff', padding: '20px', borderRadius: '25px', border: '1px solid #eee' },
+  qItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 15px', borderBottom: '1px solid #f0f0f0', marginBottom: '5px' },
+  btnDelete: { background: '#fff0f0', color: '#e21b3c', border: 'none', padding: '8px 15px', borderRadius: '10px', fontWeight: '900', cursor: 'pointer' }
 }
