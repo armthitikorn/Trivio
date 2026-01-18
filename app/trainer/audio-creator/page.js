@@ -79,10 +79,27 @@ export default function PerfectTrainerAudioCreator() {
   }, [targetDept, targetLevel, fetchMyQuestions])
 
   async function fetchTargets(uid, dept, level) {
-    const { data } = await supabase.from('target_settings')
-      .select('targets').eq('user_id', uid).eq('department', dept).eq('level', level).single()
-    if (data?.targets) setTargets(prev => ({ ...prev, ...data.targets }));
+  const { data, error } = await supabase
+    .from('target_settings')
+    .select('targets')
+    .eq('user_id', uid)
+    .eq('department', dept)
+    .eq('level', level)
+    .maybeSingle(); // 👈 เปลี่ยนจุดนี้
+
+  if (error) {
+    console.error("Fetch Targets Error:", error);
+    return;
   }
+
+  // ถ้ามีข้อมูลให้ใช้ข้อมูลที่มี ถ้าไม่มีให้กลับไปใช้ค่าเริ่มต้น (allScenarios)
+  if (data?.targets) {
+    setTargets(prev => ({ ...prev, ...data.targets }));
+  } else {
+    // รีเซ็ตเป็นค่าเริ่มต้นในกรณีที่เป็นแผนก/ระดับใหม่
+    setTargets(allScenarios.reduce((acc, curr) => ({ ...acc, [curr]: 5 }), {}));
+  }
+}
 
   // --- Recorder Logic ---
   async function startRecording() {
