@@ -49,31 +49,37 @@ export default function AudioGameArena() {
   }
 
   // ✅ แก้ข้อ 1: ฟังก์ชันเริ่ม/หยุด ด้วยการกดครั้งเดียว (Toggle)
-  async function toggleRecording() {
-    if (!isRecording) {
-      // เริ่มการอัด
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        mediaRecorder.current = new MediaRecorder(stream)
-        chunksRef.current = []
-        mediaRecorder.current.ondataavailable = (e) => chunksRef.current.push(e.data)
-        mediaRecorder.current.onstop = () => {
-          const blob = new Blob(chunksRef.current, { type: 'audio/wav' })
-          setAudioBlob(blob)
-          setPreviewUrl(URL.createObjectURL(blob)) // ✅ แก้ข้อ 2: สร้าง URL สำหรับฟังตรวจสอบ
-          stream.getTracks().forEach(t => t.stop())
+async function toggleRecording() {
+    if (!isRecording) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        mediaRecorder.current = new MediaRecorder(stream)
+        chunksRef.current = []
+        
+        mediaRecorder.current.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            chunksRef.current.push(e.data)
+          }
         }
-        mediaRecorder.current.start()
-        setIsRecording(true)
-      } catch (err) { alert("กรุณาอนุญาตไมค์") }
-    } else {
-      // หยุดการอัด
-      if (mediaRecorder.current?.state !== 'inactive') {
-        mediaRecorder.current.stop()
-        setIsRecording(false)
-      }
-    }
-  }
+
+        mediaRecorder.current.onstop = () => {
+          const blob = new Blob(chunksRef.current, { type: 'audio/webm' }) // แนะนำใช้ webm เพราะเป็นมาตรฐาน browser
+          setAudioBlob(blob)
+          setPreviewUrl(URL.createObjectURL(blob))
+          stream.getTracks().forEach(t => t.stop())
+        }
+
+        // ✅ จุดสำคัญ: ใส่ 1000 เพื่อลดภาระเครื่องและป้องกันข้อมูลหาย
+        mediaRecorder.current.start(1000) 
+        setIsRecording(true)
+      } catch (err) { alert("กรุณาอนุญาตไมค์") }
+    } else {
+      if (mediaRecorder.current?.state !== 'inactive') {
+        mediaRecorder.current.stop()
+        setIsRecording(false)
+      }
+    }
+  }
 
   // ✅ แก้ข้อ 3: ปรับปรุงการส่งไฟล์เพื่อให้แดชบอร์ดดึงข้อมูลได้แม่นยำ
   async function submitAnswer() {
