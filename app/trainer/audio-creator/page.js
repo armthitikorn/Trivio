@@ -151,7 +151,25 @@ export default function PerfectTrainerAudioCreator() {
       setDeletingId(null);
     }
   }
+  async function editQuestionTitle(id, currentTitle) {
+  const newTitle = prompt("แก้ไขข้อความโจทย์:", currentTitle);
+  if (!newTitle || newTitle === currentTitle) return;
 
+  try {
+    const { error } = await supabase
+      .from('questions')
+      .update({ question_text: newTitle })
+      .eq('id', id);
+
+    if (error) throw error;
+
+    // อัปเดต State ในหน้าจอทันที
+    setMyQuestions(prev => prev.map(q => q.id === id ? { ...q, question_text: newTitle } : q));
+    alert("แก้ไขข้อความสำเร็จ");
+  } catch (error) {
+    alert("ไม่สามารถแก้ไขได้: " + error.message);
+  }
+}
   async function saveQuestion() {
     if (!audioBlob || !questionTitle) return alert("กรุณาระบุชื่อและอัดเสียง")
     setUploading(true)
@@ -260,16 +278,22 @@ export default function PerfectTrainerAudioCreator() {
         <div style={s.statusSection}>
           <h3 style={{color:'#000', fontWeight:'900', marginBottom:'20px'}}>📊 สรุปจำนวนโจทย์โต้ตอบลูกค้า</h3>
           <div style={s.flexGrid}>
-             {allScenarios.map(scenName => {
-               const count = myQuestions.filter(q => q.category === scenName).length;
-               const target = targets[scenName] || 0;
-               return (
-                 <div key={scenName} style={s.statBox(count, target)}>
-                   <div style={{fontSize: '0.75rem', opacity: 0.8}}>{scenName}</div>
-                   <div style={{fontSize: '1.2rem', marginTop: '5px'}}>{count} / {target}</div>
-                 </div>
-               );
-             })}
+{allScenarios
+  .filter(scenName => {
+    const count = myQuestions.filter(q => q.category === scenName).length;
+    const target = targets[scenName] || 0;
+    return count > 0 || target > 0; // แสดงเฉพาะที่มีโจทย์อยู่ หรือมีการตั้งเป้าหมายไว้
+  })
+  .map(scenName => {
+    const count = myQuestions.filter(q => q.category === scenName).length;
+    const target = targets[scenName] || 0;
+    return (
+      <div key={scenName} style={s.statBox(count, target)}>
+        <div style={{fontSize: '0.75rem', opacity: 0.8}}>{scenName}</div>
+        <div style={{fontSize: '1.2rem', marginTop: '5px'}}>{count} / {target}</div>
+      </div>
+    );
+})}
           </div>
         </div>
 
@@ -282,16 +306,25 @@ export default function PerfectTrainerAudioCreator() {
             myQuestions.filter(q => q.category === category).map((q) => (
               <div key={q.id} style={s.qItem}>
                 <div style={{fontWeight:'bold'}}>{q.question_text}</div>
-                <div style={{display:'flex', gap:'10px'}}>
-                  <button onClick={() => playAudio(q.audio_question_url)} style={s.btnPlay}>▶️ ฟัง</button>
-                  <button 
-                    onClick={() => deleteQuestion(q.id, q.audio_question_url)} 
-                    disabled={deletingId === q.id}
-                    style={s.btnDelete}
-                  >
-                    {deletingId === q.id ? '...' : '🗑️ ลบ'}
-                  </button>
-                </div>
+<div style={{display:'flex', gap:'10px'}}>
+  <button onClick={() => playAudio(q.audio_question_url)} style={s.btnPlay}>▶️ ฟัง</button>
+  
+  {/* เพิ่มปุ่มนี้เข้าไปครับ */}
+  <button 
+    onClick={() => editQuestionTitle(q.id, q.question_text)} 
+    style={{...s.btnPlay, background: '#fff9db', color: '#f59f00'}}
+  >
+    ✏️ แก้ไขข้อความ
+  </button>
+
+  <button 
+    onClick={() => deleteQuestion(q.id, q.audio_question_url)} 
+    disabled={deletingId === q.id}
+    style={s.btnDelete}
+  >
+    {deletingId === q.id ? '...' : '🗑️ ลบ'}
+  </button>
+</div>
               </div>
             ))
           )}
